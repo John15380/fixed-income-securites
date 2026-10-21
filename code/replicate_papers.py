@@ -1,5 +1,7 @@
 """
-Complete replication of three bond risk premium papers FROM SCRATCH.
+Historical in-sample formula checks inspired by three bond risk premium papers.
+Uses the available updated macro panel, not an exact original-vintage replication.
+For corrected out-of-sample results use scripts/run_analysis.py.
 
 Papers:
   1. Fama & Bliss (1987)    "The Information in Long-Maturity Forward Rates"
@@ -16,8 +18,8 @@ Data used (raw only):
   - Fama_Bliss_price.txt : raw monthly bond prices (1953–2013), CRSP/WRDS
   - macro_raw_data.xlsx  : 132 raw macro series (1960–2011)
 
-Pre-computed files (1964to2007.xls, RFS2009.xls, CP column in financialdata)
-are INTENTIONALLY IGNORED.
+Pre-computed factors/returns are not used in estimation. RFS2009.xls is
+used only in an optional final alignment check; 1964to2007.xls is unused.
 """
 
 from pathlib import Path
@@ -30,7 +32,7 @@ import pandas as pd
 import statsmodels.api as sm
 from sklearn.decomposition import PCA
 import warnings
-warnings.filterwarnings("ignore")
+
 
 from bond_rp.config import DATA_DIR
 

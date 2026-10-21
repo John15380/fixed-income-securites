@@ -1,12 +1,9 @@
-"""Recompute README tables and figures from local inputs.
-
-This preserves the original research specification, including its unembargoed
-12-month labels. It deliberately does not plot a compounded equity curve.
-"""
+"""Reproducible, purged OOS forecasts and non-overlapping annual backtests."""
 
 from __future__ import annotations
-
 import argparse
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import hashlib
 import importlib.metadata
 import json
@@ -14,7 +11,6 @@ import os
 from pathlib import Path
 import re
 import sys
-import warnings
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -23,264 +19,278 @@ os.environ.setdefault("MPLCONFIGDIR", str(ROOT / ".cache" / "matplotlib"))
 import numpy as np
 import pandas as pd
 
-from bond_rp.config import DATA_DIR, GAMMA_BASE, IS_END, OOS_START, TRANSACTION_COST_BPS, W_CAP
-from bond_rp.data import (
-    load_bond_data, load_bond_data_extended, load_macro_factors_oos,
-    load_macro_factors_oos_extended, load_macro_raw_transformed, load_sentiment,
-)
-from bond_rp.metrics import hit_rate, oos_r2
-from bond_rp.models import (
-    build_all_oos, oos_eh, oos_fb, oos_cp, oos_ln, oos_ln_lasso,
-    oos_rf, oos_gbm, oos_lasso_raw, oos_rf_raw, oos_gbm_raw,
-)
-from bond_rp.strategy import mv_strategy
+from bond_rp.config import DATA_DIR, LASSO_ALPHAS, PUB_LAG_MONTHS
+from bond_rp.data import load_bond_data, load_gsw_bond_data, load_macro_raw_transformed, load_sentiment
+from bond_rp.models import ForecastResult, forecast_models
+from bond_rp.strategy import annual_backtest
+from bond_rp.tables import aligned_forecasts, annual_robustness, markdown_table, prediction_table
+
+PRED_COLUMNS = [("n", "月度样本数"), ("r2_pct", "OOS R² (%)"),
+                ("rmse_pct", "RMSE (百分点)"), ("hit_pct", "方向命中 (%)")]
+ANNUAL_COLUMNS = [("years", "年度交易数"), ("cagr_pct", "扣费 CAGR (%)"),
+                  ("annual_vol_pct", "年收益波动 (%)"), ("sharpe", "超额收益夏普"),
+                  ("max_dd_pct", "年度端点回撤 (%)"), ("delta_cer_bps", "ΔCER (bps)")]
 
 
-def evaluate(predictions: dict, bonds: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Evaluate every model and its EH benchmark on one identical set of dates."""
-    common = bonds[["rx_bar", "y1"]].dropna().index
-    for series in predictions.values():
-        common = common.intersection(series.dropna().index)
-    common = common.sort_values()
-    if len(common) < 24:
-        raise ValueError("Fewer than 24 common observations; check input coverage.")
-
-    # Match the existing Table 3 specification. These forward labels also
-    # include outcomes realized in 1990; this is disclosed in README.md.
-    initial = bonds.loc[(bonds.index >= "1964-01") & (bonds.index <= IS_END), "rx_bar"].dropna()
-    variance = np.var(initial.to_numpy() / 100, ddof=1)
-    actual = bonds.loc[common, "rx_bar"].to_numpy()
-    short_yield = bonds.loc[common, "y1"].to_numpy()
-    benchmark = predictions["EH"].loc[common].to_numpy()
-    reference = mv_strategy(benchmark, actual, short_yield, variance,
-                            GAMMA_BASE, W_CAP, TRANSACTION_COST_BPS)
-    rows = []
-    for name, series in predictions.items():
-        prediction = series.loc[common].to_numpy()
-        strategy = mv_strategy(prediction, actual, short_yield, variance,
-                               GAMMA_BASE, W_CAP, TRANSACTION_COST_BPS)
-        rows.append({
-            "model": name,
-            "start": str(common.min()), "end": str(common.max()), "n": len(common),
-            "r2_pct": 100 * oos_r2(actual, prediction, benchmark),
-            "hit_pct": 100 * hit_rate(actual, prediction),
-            "mean_excess_pct": strategy["mean_er_pct"],
-            "std_excess_pct": strategy["std_er_pct"],
-            "sharpe": strategy["sharpe"],
-            "mean_abs_weight": strategy["mean_w"],
-            "mean_turnover": strategy["turnover"],
-            "utility_gain_bps": 10000 * (strategy["au"] - reference["au"]),
-            "net_utility_gain_bps": 10000 * (strategy["au_net"] - reference["au_net"]),
-        })
-    predictions_frame = pd.DataFrame({name: s.loc[common] for name, s in predictions.items()})
-    predictions_frame["actual_rx_bar"] = actual
-    return pd.DataFrame(rows).set_index("model"), predictions_frame
+def fingerprint(files, settings):
+    digest = hashlib.sha256(json.dumps(settings, sort_keys=True).encode())
+    paths = [ROOT/"bond_rp"/name for name in ["config.py", "data.py", "models.py"]]
+    paths += [Path(DATA_DIR)/name for name in files]
+    for path in paths:
+        digest.update(path.name.encode())
+        digest.update(path.read_bytes())
+    digest.update(json.dumps(versions(), sort_keys=True).encode())
+    return digest.hexdigest()
 
 
-def markdown_table(frame: pd.DataFrame) -> str:
-    columns = [
-        ("model", "模型"), ("r2_pct", "预测 R² (%)"), ("hit_pct", "方向命中 (%)"),
-        ("mean_excess_pct", "加权一年期超额收益均值 (%)"), ("sharpe", "均值/标准差"),
-        ("utility_gain_bps", "ΔAU (bps)"), ("net_utility_gain_bps", "ΔAU 扣费 (bps)"),
-    ]
-    lines = ["| " + " | ".join(label for _, label in columns) + " |",
-             "| " + " | ".join("---" for _ in columns) + " |"]
-    for name, row in frame.iterrows():
-        cells = [name] + [f"{row[key]:.2f}" for key, _ in columns[1:]]
-        lines.append("| " + " | ".join(cells) + " |")
-    return "\n".join(lines)
+def versions():
+    return {name: importlib.metadata.version(name) for name in
+            ["numpy", "pandas", "scikit-learn", "statsmodels", "matplotlib"]}
 
 
-def render_figures(summary: pd.DataFrame, extension: pd.DataFrame | None) -> None:
+def cached_forecasts(tag, bonds, macro, sentiment, files, args, lag=PUB_LAG_MONTHS, names=None):
+    folder = args.output_dir/tag
+    folder.mkdir(parents=True, exist_ok=True)
+    key = fingerprint(files, {"lag": lag, "include_ml": args.with_ml, "names": names,
+                              "protocol": "mature-labels-v2"})
+    meta_path = folder/"cache_key.txt"
+    if not args.refresh and meta_path.exists() and meta_path.read_text() == key:
+        print(f"Using verified forecast cache: {tag}", flush=True)
+        predictions = pd.read_csv(folder/"predictions.csv", index_col="ym")
+        predictions.index = pd.PeriodIndex(predictions.index, freq="M")
+        audit = pd.read_csv(folder/"audit.csv")
+    else:
+        print(f"Computing {tag}; publication lag={lag} months", flush=True)
+        result = forecast_models(bonds, macro, sentiment, include_ml=args.with_ml,
+                                 publication_lag=lag, names=names)
+        predictions, audit = result.predictions, result.audit
+        predictions.to_csv(folder/"predictions.csv")
+        audit.to_csv(folder/"audit.csv", index=False)
+        meta_path.write_text(key)
+    for _, row in audit.iterrows():
+        if pd.Period(row.train_last_label_end, "M") >= pd.Period(row.forecast_month, "M"):
+            raise AssertionError("A forecast used an unmatured training label")
+    return ForecastResult(predictions, audit)
+
+
+def evaluate(tag, bonds, result, args):
+    aligned = aligned_forecasts(result.predictions, bonds)
+    prediction = prediction_table(aligned)
+    annual, trades = annual_backtest(bonds, aligned.drop(columns="actual"))
+    robustness = annual_robustness(bonds, aligned.drop(columns="actual"))
+    folder = args.output_dir/tag
+    aligned.to_csv(folder/"aligned_forecasts.csv")
+    prediction.to_csv(folder/"forecast_summary.csv")
+    annual.to_csv(folder/"annual_summary.csv")
+    trades.to_csv(folder/"annual_trades.csv", index=False)
+    for name, frame in robustness.items():
+        frame.to_csv(folder/(name+"_robustness.csv"), index=False)
+    return {"aligned": aligned, "prediction": prediction, "annual": annual,
+            "trades": trades, "robustness": robustness}
+
+
+def plot_results(baseline, extension):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-
-    assets = ROOT / "assets"
+    assets = ROOT/"assets"
     assets.mkdir(exist_ok=True)
-    plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 11,
-                         "axes.spines.top": False, "axes.spines.right": False,
-                         "axes.titleweight": "bold", "figure.facecolor": "white"})
-    ordered = summary.drop(index="EH").sort_values("r2_pct")
-    colors = ["#dc9167" if name.endswith("raw") else "#397b92" for name in ordered.index]
-    height = max(5.5, 0.38 * len(ordered) + 1.6)
-    fig, axes = plt.subplots(1, 2, figsize=(13, height), sharey=True)
-    for ax, column, title, suffix in [
-        (axes[0], "r2_pct", "Prediction accuracy vs historical mean", "%"),
-        (axes[1], "utility_gain_bps", "Mean-variance utility gain vs EH", " bps"),
-    ]:
-        ax.barh(ordered.index, ordered[column], color=colors, height=0.67)
-        ax.axvline(0, color="#283a49", linewidth=0.8)
-        ax.set_title(title, fontsize=12, pad=14)
-        ax.grid(axis="x", alpha=0.18)
+    plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 10,
+                         "axes.spines.top": False, "axes.spines.right": False})
+    ordered = baseline["prediction"].drop(index="EH").sort_values("r2_pct")
+    fig, axes = plt.subplots(1, 2, figsize=(12, 7), sharey=True)
+    axes[0].barh(ordered.index, ordered.r2_pct, color="#397b92")
+    axes[0].axvline(0, color="#293646", linewidth=0.8)
+    axes[0].set_title("Monthly OOS forecast R-squared (%)")
+    axes[1].barh(ordered.index, baseline["annual"].loc[ordered.index, "sharpe"], color="#d9956a")
+    axes[1].axvline(baseline["annual"].loc["EH", "sharpe"], color="#293646", linestyle="--", label="EH")
+    axes[1].axvline(baseline["annual"].loc["BuyHold", "sharpe"], color="#ad4f44", linestyle=":", label="BuyHold")
+    axes[1].set_title("Non-overlapping annual net Sharpe")
+    axes[1].legend(frameon=False)
+    for ax in axes:
+        ax.grid(axis="x", alpha=0.2)
         ax.set_axisbelow(True)
-        lower, upper = ordered[column].min(), ordered[column].max()
-        span = max(upper - min(lower, 0), 1)
-        ax.set_xlim(min(lower, 0) - span * 0.18, max(upper, 0) + span * 0.28)
-        for i, value in enumerate(ordered[column]):
-            ax.text(value + span * (0.025 if value >= 0 else -0.025), i,
-                    f"{value:.1f}{suffix}", va="center",
-                    ha="left" if value >= 0 else "right", fontsize=9)
-    first = summary.iloc[0]
-    fig.suptitle("U.S. Treasury return timing | historical research estimates", fontsize=16, y=0.98)
-    fig.text(0.02, 0.035,
-             f"Common sample: {first['start']} to {first['end']} | N={int(first['n'])} | "
-             "12-month overlapping labels; no label embargo.\n"
-             "Utility gains are gross research statistics, not realized annual portfolio returns.",
-             color="#56616c", fontsize=9)
-    fig.tight_layout(rect=(0, 0.12, 1, 0.93))
-    fig.savefig(assets / "model_comparison.png", dpi=170)
+    first = baseline["prediction"].iloc[0]
+    fig.suptitle("Corrected Treasury return timing | baseline inputs", fontsize=15)
+    fig.text(0.02, 0.025, f"Forecasts: {first['start']} to {first['end']}, N={int(first['n'])}. "
+             "Annual trading: January entries, 12-month holding.\n"
+             "Matured labels only; fold-local preprocessing; lagged current-vintage macro data.", fontsize=9)
+    fig.tight_layout(rect=(0, 0.09, 1, 0.95))
+    fig.savefig(assets/"model_comparison.png", dpi=170)
     plt.close(fig)
 
+    chosen = extension if extension is not None else baseline
+    names = [name for name in ["EH", "BuyHold", "CP", "LN", "GBM_raw", "Ensemble"] if name in chosen["annual"].index]
+    fig, ax = plt.subplots(figsize=(11, 5.5))
+    for name in names:
+        trades = chosen["trades"].loc[chosen["trades"].model == name].sort_values("purchase")
+        dates = [trades.purchase.iloc[0].to_timestamp(how="end")] + [p.to_timestamp(how="end") for p in trades.sale]
+        wealth = np.r_[1., np.cumprod(1+trades.return_net)]
+        ax.plot(dates, wealth, marker=".", markersize=4, label=name)
+    ax.set_title("Annual endpoint wealth | " + ("continuous GSW inputs" if extension is not None else "Fama-Bliss inputs"))
+    ax.set_ylabel("Net wealth (initial = 1)")
+    ax.legend(frameon=False, ncol=3)
+    ax.grid(alpha=0.2)
+    fig.text(0.02, 0.02, "January-to-January trades; annual endpoints only. Intrayear drawdown is not observed.\n"
+             "0.5 bp per leg, entry and exit; financing at the one-year zero-coupon yield is assumed.", fontsize=9)
+    fig.tight_layout(rect=(0, 0.10, 1, 1))
+    fig.savefig(assets/"annual_equity.png", dpi=170)
+    plt.close(fig)
     if extension is not None:
-        names = [name for name in extension.index if name != "EH" and name in summary.index]
-        fig, ax = plt.subplots(figsize=(10, 5))
-        positions = np.arange(len(names))
-        ax.bar(positions - 0.18, summary.loc[names, "r2_pct"], width=0.36,
-               label="Baseline inputs", color="#397b92")
-        ax.bar(positions + 0.18, extension.loc[names, "r2_pct"], width=0.36,
-               label="Spliced bond data + FRED-MD", color="#dc9167")
-        ax.set_xticks(positions, names)
-        ax.set_ylabel("Prediction R-squared vs EH (%)")
-        ax.axhline(0, color="#283a49", linewidth=0.8)
-        ax.set_title("Extension check: model rankings depend on inputs and sample", pad=14)
+        common = baseline["aligned"].index.intersection(extension["aligned"].index)
+        base_same = prediction_table(baseline["aligned"].loc[common])
+        ext_same = prediction_table(extension["aligned"].loc[common])
+        names = [c for c in ["FB", "CP", "LN", "GBM_raw", "Ensemble"] if c in base_same.index]
+        fig, ax = plt.subplots(figsize=(11, 5))
+        x = np.arange(len(names))
+        ax.bar(x-0.18, base_same.loc[names, "r2_pct"], width=0.36, label="Fama-Bliss + JLN", color="#397b92")
+        ax.bar(x+0.18, ext_same.loc[names, "r2_pct"], width=0.36, label="GSW + FRED-MD", color="#d9956a")
+        ax.set_xticks(x, names)
+        ax.axhline(0, color="#293646", linewidth=0.8)
+        ax.set_ylabel("OOS R-squared (%)")
+        ax.set_title("Data-source sensitivity | identical evaluation months")
         ax.legend(frameon=False)
-        ax.grid(axis="y", alpha=0.18)
+        ax.grid(axis="y", alpha=0.2)
         ax.set_axisbelow(True)
-        ext_first = extension.iloc[0]
-        fig.text(0.02, 0.025,
-                 f"Extension: {ext_first['start']} to {ext_first['end']}, N={int(ext_first['n'])}. "
-                 "Inputs and dates both change.\n"
-                 "Historical research estimates; overlapping labels are not embargoed.",
-                 fontsize=9, color="#56616c")
-        fig.tight_layout(rect=(0, 0.12, 1, 1))
-        fig.savefig(assets / "extension_check.png", dpi=170)
+        fig.text(0.02, 0.025, f"Matched evaluation: {common.min()} to {common.max()}, N={len(common)}. "
+                 "No cross-source bond splice.\n"
+                 "Both datasets use revised historical values; this is not a real-time vintage test.", fontsize=9)
+        fig.tight_layout(rect=(0, 0.11, 1, 1))
+        fig.savefig(assets/"extension_check.png", dpi=170)
         plt.close(fig)
 
 
-def update_readme(summary: pd.DataFrame, extension: pd.DataFrame, metadata: dict) -> None:
-    """Replace only marked result blocks, keeping prose and source notes intact."""
-    path = ROOT / "README.md"
-    content = path.read_text(encoding="utf-8")
-
-    def sample_text(frame: pd.DataFrame) -> str:
-        row = frame.iloc[0]
-        return (f"共同评价月份：**{row['start']} 至 {row['end']}，{int(row['n'])} 个有效观测**。"
-                "区间内缺失月份已取交集剔除，不能把区间长度直接当作观测数。")
-
-    def number(name: str, column: str) -> str:
-        return f"{summary.loc[name, column]:.2f}"
-
-    best = summary.drop(index="EH")["r2_pct"].idxmax()
-    findings = (
-        f"1. **宏观信息值得进一步研究。** 在本次共同样本上，LN 的预测 R² 为 "
-        f"{number('LN', 'r2_pct')}%，FB 为 {number('FB', 'r2_pct')}%，CP 为 "
-        f"{number('CP', 'r2_pct')}%。固定因子组合和递归 LASSO 版本 "
-        f"（{number('LN_LASSO', 'r2_pct')}%）的差异说明变量选择会影响结果。\n"
-        f"2. **GBM 在当前比较中领先，树模型并非普遍优于线性。** 当前设定中 {best} 的预测 R² 最高，"
-        f"为 {number(best, 'r2_pct')}%；RF_raw 为 {number('RF_raw', 'r2_pct')}%，"
-        f"LASSO_raw 为 {number('LASSO_raw', 'r2_pct')}%。这是需要在正确时间对齐后重检的模型排序。\n"
-        f"3. **预测改善不等于风险调整收益改善。** LN 的加权一年期超额收益均值为 "
-        f"{number('LN', 'mean_excess_pct')}%，但其收益/波动比为 {number('LN', 'sharpe')}，"
-        f"EH 为 {number('EH', 'sharpe')}；杠杆与波动会改变配置效果。\n"
-        f"4. **组合信号不保证优于单模型。** LN+BW 的 R² 为 {number('LNBW', 'r2_pct')}%，"
-        f"CP+LN 为 {number('CPLN', 'r2_pct')}%；加入更多信号可能同时引入噪声。\n"
-        f"5. **宏观模型的预测优势未在扩展设定中保持。** 更换宏观面板并拼接 GSW 后，LN 的 R² 为 "
-        f"{extension.loc['LN', 'r2_pct']:.2f}%，LN_LASSO 为 {extension.loc['LN_LASSO', 'r2_pct']:.2f}%，"
-        f"FB 为 {extension.loc['FB', 'r2_pct']:.2f}%。"
-        "宏观规格的预测误差高于历史均值基准，不能宣称策略跨样本稳健有效；"
-        "需要拆分数据源变化与时期变化后重新检验。"
-    )
-    environment = ("| 依赖 | 本次版本 |\n| --- | --- |\n" +
-                   "\n".join(f"| {name} | {version} |" for name, version in metadata["versions"].items()))
-    replacements = {
-        "BASELINE_SAMPLE": sample_text(summary), "BASELINE_TABLE": markdown_table(summary),
-        "EXTENSION_SAMPLE": sample_text(extension), "EXTENSION_TABLE": markdown_table(extension),
-        "FINDINGS": findings, "ENVIRONMENT": environment,
-    }
-    for name, value in replacements.items():
+def update_readme(baseline, extension, comparison):
+    path = ROOT/"README.md"
+    content = path.read_text()
+    values = {"BASELINE_SAMPLE": sample_text(baseline),
+              "BASELINE_TABLE": markdown_table(baseline["prediction"], PRED_COLUMNS),
+              "BASELINE_ANNUAL": markdown_table(baseline["annual"], ANNUAL_COLUMNS),
+              "ENVIRONMENT": "| 依赖 | 版本 |\n| --- | --- |\n" + "\n".join(f"| {n} | {v} |" for n, v in versions().items())}
+    if extension is not None:
+        values.update({"EXTENSION_SAMPLE": sample_text(extension),
+                       "EXTENSION_TABLE": markdown_table(extension["prediction"], PRED_COLUMNS),
+                       "EXTENSION_ANNUAL": markdown_table(extension["annual"], ANNUAL_COLUMNS),
+                       "MATCHED_TABLE": comparison_markdown(comparison)})
+    selected = extension if extension is not None else baseline
+    signal = "Ensemble" if "Ensemble" in selected["annual"].index else "LN"
+    ann = selected["annual"].loc[signal]
+    pred = selected["prediction"].loc[signal]
+    offsets = selected["robustness"]["offset"]
+    offset = offsets.loc[offsets.model == signal, "sharpe"]
+    top = selected["prediction"].r2_pct.idxmax()
+    values["FINDINGS"] = (
+        f"1. 在{('连续 GSW 扩展' if extension is not None else '基准')}样本上，{top} 的预测 R² 在参与比较的预测模型（含历史均值基准）中最高，"
+        f"为 {selected['prediction'].loc[top, 'r2_pct']:.2f}%；这是模型比较结果，不用于事后挑选组合。\n"
+        f"2. 预先固定的 {signal} 规格预测 R² 为 {pred.r2_pct:.2f}%，"
+        f"每年 1 月建仓的扣费 CAGR 为 {ann.cagr_pct:.2f}%，超额收益夏普为 {ann.sharpe:.2f}，"
+        f"基于 {int(ann.years)} 笔不重叠年度交易。EH 夏普为 {selected['annual'].loc['EH','sharpe']:.2f}，"
+        f"等权持有基准的 CAGR 为 {selected['annual'].loc['BuyHold','cagr_pct']:.2f}%、夏普为 "
+        f"{selected['annual'].loc['BuyHold','sharpe']:.2f}；组合未在所有风险调整指标上胜过被动持有。\n"
+        f"3. 将固定建仓月份从 1 月改为 1–12 月分别回测，该规格的夏普范围为 "
+        f"{offset.min():.2f}–{offset.max():.2f}。这 12 条路径相互重叠，不能合并成 12 倍独立样本。\n"
+        f"4. 组合预测的损失差 HAC 检验 p 值为 {pred.hac_p:.3f}，Holm 校正后为 {pred.holm_p:.3f}。"
+        "不将正的 R² 点估计直接解释为统计显著；预测精度、交易表现与不同数据源的稳健性需要分别判断。"
+        "当前结果只支持对所列历史数据和交易假设的研究结论，不等于真实成交记录或实时信息有效性证明。")
+    if extension is not None:
+        later = comparison.loc[(comparison.panel == "GSW+FRED：2013 年起") & (comparison.model == signal)]
+        if not later.empty:
+            values["FINDINGS"] += (f"\n5. 单看 2013 年起的较晚样本，该组合预测 R² 为 {later.iloc[0].r2_pct:.2f}%。"
+                                   "应单独判断较晚时期的表现，不能从全样本的正 R² 外推跨时期稳健性。")
+    values["RESUME"] = (
+        "搭建美国国债多因子收益预测与资产配置研究框架，覆盖远期利率、宏观 PCA、情绪及机器学习模型；"
+        "实现一年期标签兑现隔离、带隔离区的时间交叉验证、HAC 误差检验与含交易费用的不重叠年度回测，"
+        "并检验建仓月份、成本和数据源敏感性。\n\n"
+        f"在所列历史数据及融资成本假设下，"
+        f"{signal} 的 {int(ann.years)} 笔年度回测扣费 CAGR 为 {ann.cagr_pct:.2f}%，"
+        f"超额收益夏普为 {ann.sharpe:.2f}。该指标来自所述理论组合的历史回测。")
+    for name, value in values.items():
         pattern = rf"(<!-- BEGIN {name} -->).*?(<!-- END {name} -->)"
         content, count = re.subn(pattern, lambda m: f"{m[1]}\n{value}\n{m[2]}", content, flags=re.S)
         if count != 1:
-            raise ValueError(f"Expected exactly one README block: {name}")
-    path.write_text(content, encoding="utf-8")
+            raise ValueError(f"Expected one README block: {name}")
+    path.write_text(content)
 
 
-def main() -> None:
+def comparison_markdown(frame):
+    text = ["| 数据与时期 | 模型 | 月数 | R² (%) |", "| --- | --- | --- | --- |"]
+    for _, row in frame.iterrows():
+        text.append(f"| {row.panel} | {row.model} | {int(row.n)} | {row.r2_pct:.2f} |")
+    return "\n".join(text)
+
+
+def sample_text(result):
+    first = result["prediction"].iloc[0]
+    annual = result["annual"].iloc[0]
+    return (f"月度预测评价：**{first['start']}–{first['end']}，{int(first['n'])} 个月**；"
+            f"固定 1 月建仓的年度回测：**{annual['start']}–{annual['end']}，{int(annual['years'])} 笔交易**。")
+
+
+def main(default_full=False):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--with-ml", action="store_true", help="Also fit PCA/raw LASSO, RF, and GBM.")
-    parser.add_argument("--with-extensions", action="store_true", help="Also evaluate GSW/FRED-MD inputs.")
-    parser.add_argument("--update-readme", action="store_true", help="Update the marked README result blocks.")
-    parser.add_argument("--output-dir", type=Path, default=ROOT / "output")
+    parser.add_argument("--with-ml", action="store_true", default=default_full)
+    parser.add_argument("--with-extensions", action="store_true", default=default_full)
+    parser.add_argument("--update-readme", action="store_true")
+    parser.add_argument("--refresh", action="store_true", help="Discard matching prediction caches")
+    parser.add_argument("--output-dir", type=Path, default=ROOT/"output"/"corrected")
     args = parser.parse_args()
     if args.update_readme and not (args.with_ml and args.with_extensions):
-        parser.error("--update-readme requires --with-ml and --with-extensions")
-    warnings.filterwarnings("ignore", category=FutureWarning)
-
-    bonds = load_bond_data()
-    factors, last_macro = load_macro_factors_oos()
-    sentiment = load_sentiment()
-    predictions, indexed = build_all_oos(bonds, factors, last_macro, df_sent=sentiment)
-    print("Computing LN_LASSO ...", flush=True)
-    predictions["LN_LASSO"] = oos_ln_lasso(indexed, factors)
-    raw = load_macro_raw_transformed()
-    if args.with_ml:
-        for name, function, features in [
-            ("RF_pca", oos_rf, factors), ("GBM_pca", oos_gbm, factors),
-            ("LASSO_raw", oos_lasso_raw, raw), ("RF_raw", oos_rf_raw, raw),
-            ("GBM_raw", oos_gbm_raw, raw),
-        ]:
-            print(f"Computing {name} ...", flush=True)
-            predictions[name] = function(indexed, features)
-
-    summary, forecasts = evaluate(predictions, indexed)
-    extension = None
-    if args.with_extensions:
-        print("Computing extension ...", flush=True)
-        extended = load_bond_data_extended().set_index("ym")
-        extended_factors, _ = load_macro_factors_oos_extended()
-        extension_predictions = {"EH": oos_eh(extended)}
-        for name, function in [("FB", oos_fb), ("CP", oos_cp)]:
-            extension_predictions[name] = function(extended)
-        extension_predictions["LN"] = oos_ln(extended, extended_factors)
-        extension_predictions["LN_LASSO"] = oos_ln_lasso(extended, extended_factors)
-        extension, extension_forecasts = evaluate(extension_predictions, extended)
-
-    output = args.output_dir
-    output.mkdir(parents=True, exist_ok=True)
-    summary.to_csv(output / "baseline_summary.csv")
-    forecasts.to_csv(output / "baseline_forecasts.csv", index_label="ym")
-    (output / "baseline_table.md").write_text(markdown_table(summary) + "\n", encoding="utf-8")
-    if extension is not None:
-        extension.to_csv(output / "extension_summary.csv")
-        extension_forecasts.to_csv(output / "extension_forecasts.csv", index_label="ym")
-        (output / "extension_table.md").write_text(markdown_table(extension) + "\n", encoding="utf-8")
-
+        parser.error("README update requires --with-ml --with-extensions")
     files = ["Fama_Bliss_price.txt", "macro_raw_data.xlsx", "SENTIMENT.xlsx"]
+    bonds, macro, sentiment = load_bond_data(), load_macro_raw_transformed(), load_sentiment()
+    result = cached_forecasts("baseline", bonds, macro, sentiment, files, args)
+    baseline = evaluate("baseline", bonds, result, args)
+    extension, comparisons = None, []
     if args.with_extensions:
+        ext_files = ["GSW_yields.csv", "2026-04-MD.csv", "SENTIMENT.xlsx"]
+        ext_bonds, ext_macro = load_gsw_bond_data(), load_macro_raw_transformed("fredmd")
+        ext_result = cached_forecasts("gsw", ext_bonds, ext_macro, sentiment, ext_files, args)
+        extension = evaluate("gsw", ext_bonds, ext_result, args)
+        common = baseline["aligned"].index.intersection(extension["aligned"].index)
+        for title, aligned in [("FB+JLN：共同期", baseline["aligned"].loc[common]),
+                                ("GSW+FRED：共同期", extension["aligned"].loc[common]),
+                                ("GSW+FRED：2013 年起", extension["aligned"].loc["2013-01":])]:
+            table = prediction_table(aligned)
+            for model in ["EH", "CP", "LN", "Ensemble"]:
+                if model in table.index:
+                    row = table.loc[model]
+                    comparisons.append({"panel": title, "model": model, "n": row.n, "r2_pct": row.r2_pct})
+        # Lag sensitivity: compare identical dates across all three lag assumptions.
+        lag_results = {}
+        names = ["EH", "FB", "CP", "LN", "BW", "CPLN", "LNBW"]
+        for lag in [1, 2, 3]:
+            lag_result = cached_forecasts(f"lag{lag}", ext_bonds, ext_macro, sentiment, ext_files, args, lag, names)
+            lag_results[lag] = aligned_forecasts(lag_result.predictions, ext_bonds)
+        shared = extension["aligned"].index
+        for frame in lag_results.values():
+            shared = shared.intersection(frame.index)
+        lag_tables = []
+        for lag, frame in lag_results.items():
+            table = prediction_table(frame.loc[shared]).reset_index()
+            table["publication_lag"] = lag
+            lag_tables.append(table)
+        pd.concat(lag_tables).to_csv(args.output_dir/"lag_sensitivity.csv", index=False)
         files += ["GSW_yields.csv", "2026-04-MD.csv"]
-    metadata = {
-        "protocol": "original historical specification; no 12-month label embargo",
-        "comparison": "identical nonmissing dates across models within each panel",
-        "oos_start_requested": str(OOS_START), "macro_series_count": len(raw.columns),
-        "gamma": GAMMA_BASE, "weight_cap": W_CAP,
-        "assumed_one_way_cost_bps": TRANSACTION_COST_BPS,
-        "versions": {name: importlib.metadata.version(name) for name in
-                     ("numpy", "pandas", "statsmodels", "scikit-learn", "matplotlib")},
-        "inputs_sha256": {name: hashlib.sha256((Path(DATA_DIR) / name).read_bytes()).hexdigest()
-                          for name in files},
-        "bond_price_range": [str(bonds.ym.min()), str(bonds.ym.max())],
-        "macro_factor_range": [str(factors.index.min()), str(factors.index.max())],
-        "sentiment_feature_range": [str(sentiment.index.min()), str(sentiment.index.max())],
-    }
-    (output / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
-    render_figures(summary, extension)
+    comparison = pd.DataFrame(comparisons)
+    comparison.to_csv(args.output_dir/"matched_comparison.csv", index=False)
+    metadata = {"protocol": "matured-labels; purged CV; fold-local preprocessing; annual non-overlapping trades",
+                "target": "simple annual excess return, percentage points", "publication_lag": PUB_LAG_MONTHS,
+                "lasso_alpha_grid": LASSO_ALPHAS, "lasso_tuning": "first forecast and each January",
+                "generated_at": datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(),
+                "python": sys.version.split()[0],
+                "source_sha256": {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
+                                  for path in [*sorted((ROOT/"bond_rp").glob("*.py")), Path(__file__)]},
+                "versions": versions(), "input_sha256": {name: hashlib.sha256((Path(DATA_DIR)/name).read_bytes()).hexdigest()
+                                                            for name in files}}
+    (args.output_dir/"metadata.json").write_text(json.dumps(metadata, indent=2))
+    plot_results(baseline, extension)
     if args.update_readme:
-        update_readme(summary, extension, metadata)
-    print("\n" + markdown_table(summary))
+        update_readme(baseline, extension, comparison)
+    print("\nBaseline forecast diagnostics:\n"+markdown_table(baseline["prediction"], PRED_COLUMNS))
+    print("\nBaseline annual trading:\n"+markdown_table(baseline["annual"], ANNUAL_COLUMNS))
     if extension is not None:
-        print("\nExtension:\n" + markdown_table(extension))
-    print(f"\nWrote local tables to {output}; figures to {ROOT / 'assets'}.")
+        print("\nContinuous GSW annual trading:\n"+markdown_table(extension["annual"], ANNUAL_COLUMNS))
+    print(f"\nSaved corrected results to {args.output_dir}")
 
 
 if __name__ == "__main__":

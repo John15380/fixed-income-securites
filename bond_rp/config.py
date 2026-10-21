@@ -7,22 +7,21 @@ import pandas as pd
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.environ.get("BOND_RP_DATA_DIR", os.path.join(PROJECT_ROOT, "GroupProjectData"))
 
-# ── Sample design ──────────────────────────────────────────────────────────────
-OOS_START  = pd.Period("1990-01", "M")   # baseline OOS start
-IS_END     = pd.Period("1989-12", "M")   # in-sample window end (PCA fit for OOS)
-
-# ── Model parameters ───────────────────────────────────────────────────────────
-NW_LAGS     = 18
-GAMMA_BASE  = 5
-W_CAP       = 3.0
-MATS        = [2, 3, 4, 5]
+# All forecast decisions and parameters are fixed before the corrected run.
+OOS_START = pd.Period("1990-01", "M")
+TRAIN_START = pd.Period("1964-01", "M")
+HORIZON_MONTHS = 12
+MIN_TRAIN_OBS = 120
+PUB_LAG_MONTHS = 2
+REBALANCE_MONTH = 1
+NW_LAGS = 18
+GAMMA_BASE = 5
+W_CAP = 3.0
+MATS = [2, 3, 4, 5]
 TI_LOOKBACK = 12
-
-# ── Robustness grids ───────────────────────────────────────────────────────────
-TI_LOOKBACKS         = [3, 6, 9, 12, 24]          # Table 4f: lookback sensitivity
-GAMMA_GRID           = [1,2,3,4,5,6,7,8,10,15,20] # Table 4b / γ optimization
-PUB_LAG_MONTHS       = 1                           # Table 4h: default publication lag
-TRANSACTION_COST_BPS = 0.5                         # Table 4i: bid-ask per unit (bps)
+TRANSACTION_COST_BPS = 0.5
+CV_SPLITS = 3
+LASSO_ALPHAS = (0.01, 0.0316227766, 0.1, 0.316227766, 1.0, 3.16227766, 10.0)
 
 # ── Macro series transformation codes (Stock & Watson 2002) ───────────────────
 # 1=level, 2=Δ, 4=log, 5=Δlog×100, 6=Δ²log×100

@@ -1,6 +1,6 @@
 [project]
 name = "bond-rp"
-version = "0.2.0"
+version = "0.3.0"
 description = "Purged Treasury return forecasts and non-overlapping annual allocation"
 requires-python = ">=3.11"
 dependencies = [

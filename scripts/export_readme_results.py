@@ -182,7 +182,7 @@ def update_readme(baseline, extension, comparison):
     values["FINDINGS"] = (
         f"1. 在{('连续 GSW 扩展' if extension is not None else '基准')}样本上，{top} 的预测 R² 在参与比较的预测模型（含历史均值基准）中最高，"
         f"为 {selected['prediction'].loc[top, 'r2_pct']:.2f}%；这是模型比较结果，不用于事后挑选组合。\n"
-        f"2. 预先固定的 {signal} 规格预测 R² 为 {pred.r2_pct:.2f}%，"
+        f"2. 固定权重的 {signal} 规格预测 R² 为 {pred.r2_pct:.2f}%，"
         f"每年 1 月建仓的扣费 CAGR 为 {ann.cagr_pct:.2f}%，超额收益夏普为 {ann.sharpe:.2f}，"
         f"基于 {int(ann.years)} 笔不重叠年度交易。EH 夏普为 {selected['annual'].loc['EH','sharpe']:.2f}，"
         f"等权持有基准的 CAGR 为 {selected['annual'].loc['BuyHold','cagr_pct']:.2f}%、夏普为 "
@@ -204,6 +204,9 @@ def update_readme(baseline, extension, comparison):
         f"在所列历史数据及融资成本假设下，"
         f"{signal} 的 {int(ann.years)} 笔年度回测扣费 CAGR 为 {ann.cagr_pct:.2f}%，"
         f"超额收益夏普为 {ann.sharpe:.2f}。该指标来自所述理论组合的历史回测。")
+    if "<!-- BEGIN SPECIFICATION_AUDIT -->" in content:
+        # The wider audit exporter owns this block once the audit is present.
+        values.pop("RESUME")
     for name, value in values.items():
         pattern = rf"(<!-- BEGIN {name} -->).*?(<!-- END {name} -->)"
         content, count = re.subn(pattern, lambda m: f"{m[1]}\n{value}\n{m[2]}", content, flags=re.S)

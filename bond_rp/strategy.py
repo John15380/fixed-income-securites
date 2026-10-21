@@ -10,25 +10,35 @@ from .metrics import annual_performance
 from .models import matured_training
 
 
-def allocation_weights(expected, historical_excess, gamma=GAMMA_BASE, cap=W_CAP, method="scalar"):
+def allocation_weights(expected, historical_excess, gamma=GAMMA_BASE, cap=W_CAP, method="scalar",
+                       target_vol=.04):
     """Four actual NAV weights; the total absolute exposure is bounded by cap.
 
     historical_excess MUST consist of labels known at the decision date. The
     date-aware backtest below enforces this. All inputs are simple decimals.
+    long_only clips mean-variance weights to [0, cap]; vol_target uses only the
+    forecast sign and target_vol / past basket volatility. direct interprets
+    expected as a requested basket weight (e.g. an outcome-free trend vote).
     """
     history = np.asarray(historical_excess, dtype=float)
     if history.ndim != 2 or history.shape[1] != len(MATS) or not np.isfinite(history).all():
         raise ValueError("Expected finite historical excess returns with four maturities")
-    if gamma <= 0 or cap <= 0:
-        raise ValueError("gamma and cap must be positive")
+    if gamma <= 0 or cap <= 0 or target_vol <= 0:
+        raise ValueError("gamma, cap and target volatility must be positive")
     mu = np.asarray(expected, dtype=float)
     if mu.ndim == 0:
         mu = np.repeat(mu, len(MATS))
     if mu.shape != (len(MATS),) or not np.isfinite(mu).all():
         raise ValueError("Expected one forecast or four maturity forecasts")
-    if method == "scalar":
+    if method in {"scalar", "long_only", "vol_target", "direct"}:
         variance = np.var(history.mean(axis=1), ddof=1)
-        weight = np.clip(mu.mean()/(gamma*max(variance, 1e-10)), -cap, cap)
+        if method == "direct":
+            weight = np.clip(mu.mean(), 0, cap)
+        elif method == "vol_target":
+            weight = min(cap, target_vol/np.sqrt(max(variance, 1e-10))) if mu.mean() > 0 else 0.
+        else:
+            weight = np.clip(mu.mean()/(gamma*max(variance, 1e-10)),
+                             0 if method == "long_only" else -cap, cap)
         return np.repeat(weight/len(MATS), len(MATS))
     if method == "diagonal":
         covariance = np.diag(np.maximum(np.var(history, axis=0, ddof=1), 1e-10))
@@ -43,7 +53,7 @@ def allocation_weights(expected, historical_excess, gamma=GAMMA_BASE, cap=W_CAP,
 
 def annual_backtest(bonds, predictions, *, gamma=GAMMA_BASE, cap=W_CAP,
                     cost_bps=TRANSACTION_COST_BPS, rebalance_month=REBALANCE_MONTH,
-                    method="scalar"):
+                    method="scalar", target_vol=.04):
     """Select one calendar month, hold exactly 12 months, then liquidate all legs.
 
     Annual cash return is the observed one-year zero-coupon yield converted to
@@ -75,7 +85,7 @@ def annual_backtest(bonds, predictions, *, gamma=GAMMA_BASE, cap=W_CAP,
             else:
                 weights = allocation_weights(predictions.loc[date, model]/100,
                                               historical[[f"sx{n}" for n in MATS]].to_numpy()/100,
-                                              gamma, cap, method)
+                                              gamma, cap, method, target_vol)
             actual = bonds.loc[date, [f"simple{n}" for n in MATS]].to_numpy(dtype=float)/100
             rf = bonds.loc[date, "rf_simple"]/100
             gross = rf + weights @ (actual-rf)

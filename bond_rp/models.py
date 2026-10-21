@@ -190,7 +190,7 @@ def forecast_models(bonds, macro, sentiment=None, *, include_ml=True, oos_start=
                 print(f"    through {date}", flush=True)
         output[name] = pd.Series(values, dtype=float)
     predictions = pd.DataFrame(output).sort_index()
-    # Predeclared combination; never choose weights using OOS scores.
+    # Fixed combination in this retrospective study; not a preregistration.
     components = ["CP", "LN", "BW", "GBM_raw"] if include_ml else ["CP", "LN", "BW"]
     if all(c in predictions for c in components):
         predictions["Ensemble"] = predictions[components].mean(axis=1, skipna=False)

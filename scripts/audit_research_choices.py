@@ -6,6 +6,7 @@ Run with OPENBLAS_NUM_THREADS=1 for fast repeated small matrix fits.
 import argparse
 import hashlib
 import json
+from itertools import combinations
 import os
 from pathlib import Path
 import sys
@@ -19,13 +20,15 @@ import pandas as pd
 from bond_rp.config import DATA_DIR
 from bond_rp.data import (load_bond_data, load_gsw_bond_data,
                           load_macro_raw_transformed, load_sentiment)
-from bond_rp.robustness import (family_forecasts, online_combination,
+from bond_rp.robustness import (FAMILIES, LOOKBACKS, family_forecasts, online_combination,
                                 paired_sharpe_bootstrap, r2_decomposition)
 from bond_rp.strategy import annual_backtest
 from bond_rp.tables import aligned_forecasts, prediction_table
 
 STARTS = ("1985-01", "1990-01", "1995-01", "2000-01")
 RISK_MODELS = ["EH", "CP", "LN", "BW", "TI", "EW4", "EW_mature", "Select_mature"]
+COMMON_OLS = {"+".join(c) for size in range(1, 5) for c in combinations(FAMILIES, size)}
+COMMON_OLS |= {f"MA{k}" for k in LOOKBACKS}
 
 
 def cache_key(paths, settings):
@@ -76,7 +79,7 @@ def run_dataset(tag, bonds, macro, sentiment, args):
         audit["origin"] = start
         selections.append(audit)
         aligned = aligned_forecasts(subset.drop(columns="TrendVote"), indexed)
-        scores = prediction_table(aligned).reset_index()
+        scores = prediction_table(aligned, nested_models=COMMON_OLS).reset_index()
         scores["origin"] = start
         starts.append(scores)
         all_summary, all_trades = annual_backtest(indexed, aligned.drop(columns="actual"))

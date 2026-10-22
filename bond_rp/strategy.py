@@ -86,6 +86,12 @@ def annual_backtest(bonds, predictions, *, gamma=GAMMA_BASE, cap=W_CAP,
                 weights = allocation_weights(predictions.loc[date, model]/100,
                                               historical[[f"sx{n}" for n in MATS]].to_numpy()/100,
                                               gamma, cap, method, target_vol)
+            if method in {"long_only", "vol_target", "direct"} and cap <= 1:
+                # Long-only accounts also reserve cash for entry fees. Spending
+                # exactly one NAV on bonds would otherwise borrow the fee.
+                required_cash = weights.sum()+cost*np.abs(weights).sum()
+                if required_cash > 1:
+                    weights = weights/required_cash
             actual = bonds.loc[date, [f"simple{n}" for n in MATS]].to_numpy(dtype=float)/100
             rf = bonds.loc[date, "rf_simple"]/100
             gross = rf + weights @ (actual-rf)
@@ -95,6 +101,7 @@ def annual_backtest(bonds, predictions, *, gamma=GAMMA_BASE, cap=W_CAP,
             rows.append({"model": model, "purchase": date, "sale": date+HORIZON_MONTHS,
                          "return_gross": gross, "return_net": gross-fee_with_financing,
                          "risk_free": rf, "cost": fee_with_financing,
+                         "cash_after_entry": 1-weights.sum()-entry_fee,
                          "gross_exposure": np.abs(weights).sum(), "net_exposure": weights.sum(),
                          "train_last_label_end": historical.index.max()+HORIZON_MONTHS,
                          **{f"w{n}": weights[i] for i, n in enumerate(MATS)}})

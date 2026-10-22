@@ -111,7 +111,7 @@ def main():
                 p = p.join(adaptive)
                 audit.to_csv(args.output_dir/f"selector_{source}_lag{lag}.csv", index=False)
                 aligned = aligned_forecasts(p, bonds)
-                scores = prediction_table(aligned).reset_index()
+                scores = prediction_table(aligned, nested_models={"CP", "TI", "LN", "CP+LN"}).reset_index()
                 scores["source"], scores["lag"] = source, lag
                 rows.append(scores)
                 for method, cap in [("scalar", 3), ("long_only", 1), ("vol_target", 1)]:

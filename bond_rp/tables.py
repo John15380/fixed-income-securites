@@ -6,7 +6,9 @@ from statsmodels.stats.multitest import multipletests
 from .metrics import hit_rate, loss_test, oos_r2
 from .strategy import annual_backtest
 
-NESTED_OLS = {"FB", "CP", "TI", "LN", "CPLN", "BW", "LNBW"}
+# Sentiment starts later than the default EH history. Do not classify those
+# comparisons as nested simply because their estimators are OLS.
+NESTED_OLS = {"FB", "CP", "TI", "LN", "CPLN"}
 
 
 def aligned_forecasts(predictions, bonds):
@@ -20,17 +22,23 @@ def aligned_forecasts(predictions, bonds):
     return aligned
 
 
-def prediction_table(aligned):
+def prediction_table(aligned, *, nested_models=None):
+    """CW only for confirmed nested, same-history regressions.
+
+    The controlled common-training grid passes its own explicit model set.
+    Other comparisons retain the unadjusted HAC loss differential.
+    """
+    nested_models = NESTED_OLS if nested_models is None else set(nested_models)
     actual, benchmark = aligned["actual"].to_numpy(), aligned["EH"].to_numpy()
     rows = []
     for name in aligned.columns.drop("actual"):
         prediction = aligned[name].to_numpy()
-        statistic, p = loss_test(actual, prediction, benchmark, nested=name in NESTED_OLS)
+        statistic, p = loss_test(actual, prediction, benchmark, nested=name in nested_models)
         rows.append({"model": name, "n": len(aligned), "start": str(aligned.index.min()),
                      "end": str(aligned.index.max()), "r2_pct": 100*oos_r2(actual, prediction, benchmark),
                      "rmse_pct": np.sqrt(np.mean((actual-prediction)**2)),
                      "hit_pct": 100*hit_rate(actual, prediction), "hac_stat": statistic, "hac_p": p,
-                     "test": "CW-HAC" if name in NESTED_OLS else "loss-difference-HAC"})
+                     "test": "CW-HAC" if name in nested_models else "loss-difference-HAC"})
     table = pd.DataFrame(rows).set_index("model")
     alternatives = table.index != "EH"
     table.loc[alternatives, "holm_p"] = multipletests(table.loc[alternatives, "hac_p"], method="holm")[1]

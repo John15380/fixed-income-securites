@@ -2,7 +2,11 @@
 
 一个可复现的固定收益课程研究项目：以美国 2–5 年期零息国债为对象，研究远期利差、远期利率组合与宏观因子能否在历史均值基准之外预测超额收益，并检验预测能否转化为扣费后的投资效用。
 
+**先验证文献，再扩展模型。** [原论文数值校验](#literature-replication) 对照作者数据、实际 PDF 原表和独立回归，验证 FB、CP、LN 及 CP15 的构造；CP15 的 GSW 数据适配、历史远期利率、ElasticNet、XGBoost、Gaussian Copula 和验证期调参见 [新增实验](#validated-extension)。原作者全样本因子仅用于描述复现，样本外全部重新构造。
+
 **研究主线按正式课程要求与原文定义。** [文献基准核对](#coursework-check) 单列 EH、逐期限 FB、两阶段 CP、含三次项的 LN6，以及 LN 原文的 LN5/CP 联合规格，分别报告样本内、一年期样本外和经济价值。[六项研究选择审计](#research-audit) 回答组合、均线周期、起点、风险参数、数据版本及 R² 可比性；[月度配置研究](#trading-designs) 是一月预测期的策略扩展。最新的 [文献驱动改进与策略复核](#refinement-study) 实现 Goh48、sPCA、外推保护、递归收缩和成本感知配置，并与先前的 EW3 候选公平比较。所有新增方案属于已接触历史样本后的探索，不称为预注册。
+
+**新增发现。** CP15 在 2017 年冻结设定后的主评价中，一年期篮子 OOS R² 为 7.63%（修订核心通胀）及 5.15%（历史总通胀版本）；原始 HAC 和联合检验仍未确认稳定预测优势。XGBoost＋Copula 在修订核心通胀面板约为 9.43%，历史版本约为 -4.15%，说明新增方法的效果依赖信息版本和时期。完整比较见 §5.6。
 
 **目前保留的投资候选：EW3，10 年滚动、预测收缩、仅多头。** 将远期利率 CP、宏观 LN8、价格 MA12 的平均收益预测等权，再以 50% 权重向同窗口历史均值收缩；按 γ=5 的均值—方差规则配置等权 2–5 年期篮子，敞口限制在 [0,1]。风险只用已兑现的过去 60 月收益，余款为现金，并预留入场费用。LN8/价格 MA12 属于扩展，文献原规格另列；这里没有声称 10 年、MA12 或 50% 收缩是唯一最优选择。
 
@@ -23,6 +27,8 @@
 | 基础年度报告（§1–5）与六项审计（§5.1） | 保留修复前视后的 LN8、简化情绪、趋势和机器学习比较 | 属于扩展模型；不能将其中 LN8、BW、TI 的结果称为原论文规格 |
 | 一月期策略（§5.2） | 滚动估计、收缩、仅多头月度交易 | 是另一预测期的探索，较高夏普不能替代一年期的 EH 检验 |
 | 文献驱动改进（§5.4） | Goh48、sPCA、LN6 外推保护；固定 Core 主检验与既有 EW3 候选复核 | 原规格、消融、成本、冷启动、历史版本与联合检验同时保留，不以复杂度或新排名替换已有结论 |
+| 原论文数值校验（§5.5） | 作者指数重建、原表数值、MATLAB PCA 与生产流程独立校验；修正 CP 第二阶段截距 | FB1987 数据版本差异如实保留；CP/LN 原表与 CP15 数据适配分别披露 |
+| 验证期选择与非线性扩展（§5.6） | CP15、平滑远期利率、EN/XGBoost、Copula 增强；2017 年冻结超参数与收缩 | 原始与校准预测、真实与合成训练、修订与历史版本、主期与后续期全部保留 |
 
 基础报告保留 CP、LN、BW 与 GBM_raw 的等权预测作为比较规格；其固定权重是在修正研究时制定。不同目标与交易频率的结果分别报告，不以事后排名替代选择依据。
 
@@ -956,6 +962,162 @@ $$\lambda_t=\operatorname{clip}\left(\frac{\sum_s d_s(y_s-b_s)}{\sum_s d_s^2},0,
 复现：`OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python scripts/refine_strategies.py --iqr-stress --update-readme`。`--stage forecast` 生成可验证缓存，`--stage evaluate` 仅重算统计/策略；不一致缓存拒绝评分。全部菜单、逐期预测、变换/选择日志、收缩参数、不同起点/冷启动、压力测试、CER 区间与联合检验保存在本地 `output/refinement/`，不上传原始数据。
 <!-- END REFINEMENT_STUDY -->
 
+<!-- LITERATURE_REPLICATION:START -->
+<a id="literature-replication"></a>
+### 5.5 原论文数值复现与代码校验
+
+先运行 `python scripts/replicate_literature.py --update-readme`，通过后才能运行新增模型实验。
+校验不通过时退出，不用调高策略收益来判断代码正确。
+
+| 模型 | 原表 R²，2 / 3 / 4 / 5 年 | 本地重算，2 / 3 / 4 / 5 年 |
+| --- | --- | --- |
+| FB87 | 0.14 / 0.11 / 0.11 / 0.05 | 0.128 / 0.133 / 0.111 / 0.028 |
+| FB in CP05 Table 2 | 0.16 / 0.17 / 0.18 / 0.09 | 0.159 / 0.174 / 0.184 / 0.085 |
+| CP05 restricted | 0.31 / 0.34 / 0.37 / 0.34 | 0.311 / 0.336 / 0.369 / 0.342 |
+| LN09 CP | 0.31 / 0.34 / 0.37 / 0.34 | 0.312 / 0.336 / 0.369 / 0.343 |
+| LN09 LN5 released | 0.22 / 0.19 / 0.17 / 0.14 | 0.219 / 0.187 / 0.165 / 0.145 |
+| LN09 LN6 released | 0.26 / 0.24 / 0.23 / 0.21 | 0.258 / 0.243 / 0.231 / 0.211 |
+| LN09 CP+LN5 | 0.44 / 0.44 / 0.45 / 0.42 | 0.444 / 0.440 / 0.453 / 0.415 |
+
+通过 41 项数值校验：原始价格按日历重建收益；生产用两阶段函数与独立 statsmodels
+回归一致；从作者八个 PC 重构的 LN5/LN6 指数与作者发布指数的 RMSE 均小于 0.001 个百分点；
+用作者 MATLAB 原始面板、变换代码重新提取的八个 PC 与作者因子在允许符号翻转后逐点一致至 1e-8。
+
+**口径修正。** `RFS2009.xls` 的 `yr2`–`yr5` 标在收益实现月，预测变量标在形成月，必须间隔
+12 个日历月。作者文件有 480 行，1964-01–2003-12；配对后有 468 个预测形成月，最后为 2002-12。
+CP 原文式 (2) 第二阶段为不另加截距的 `b_n × CP`，已修正生产参考模型；LN Table 2 则含截距。
+CP restricted R² 显式用中心化 SST，避免无截距回归软件默认的非中心化 R²。FB87 和 LN09 原表报告调整 R²。
+
+**复现边界。** FB87 使用本地更新价格得到的结果与 1987 原表存在差异，尤其五年期；这里如实保留，
+不称为精确复现 1987 数据版本，也不把 NW18 标准误冒充原文全部推断方法。CP 原始价格结果接近原表；
+LN 作者数据可复现主要单因子与联合因子表。PCA 的独立重建使用作者 Handbook 2007 版本的 131 列
+面板，与 RFS2009 的原始 132 列不是同一数据版本，不能据此声称重建了后者全部原始宏观输入。
+原始作者因子属于全样本事后估计，仅用于本节校验，**不进入新增策略的样本外输入**。
+
+CP 的 480 行按 1964–2003 收益实现月定义，对应买入月 1963-01–2002-12；与上面的 LN 作者
+因子配对得到的 468 行分开报告，不混淆样本数。另增加 CP15 的原区间 1971-11–2010-12（470 个
+预测形成月）对照：以原文一月 CPI 发布滞后，用 GSW 适配后调整 R² 约 0.507，原文为 0.53。
+生产用的 20 条收益率去趋势结果与独立 statsmodels 回归一致；曲线来源不同，不强迫原表数字一致。
+新增 OOS 的 CPI 信息滞后统一为两月，因此不把原区间描述拟合直接当作 OOS 成绩。
+
+来源：[LN 作者数据与代码](https://www.sydneyludvigson.com/data-and-appendixes)、
+[CP Table 1 / Eq. 2](https://web.stanford.edu/~piazzesi/cp.pdf)。
+FB 原表：本地 Fama–Bliss (1987), p.683, Table 1；LN 原表：p.5040, Table 2。
+旧 `code/replicate_papers.py` 现在转到本校验入口，停止展示此前抄错的原表数字和样本说明。
+
+![作者原表与代码数值对照](assets/literature_replication.png)
+
+<!-- LITERATURE_REPLICATION:END -->
+
+<!-- VALIDATED_EXTENSION:START -->
+<a id="validated-extension"></a>
+### 5.6 基准校验后的 CP15 与验证期机器学习实验
+
+本节先执行 §5.5 全部数值校验，通过后才调参。它是按已披露截图提出的后续历史研究，
+所有历史期间此前已经看过，因此 2017–2022 不称为完全未触碰的留出集。
+训练起点 1994-01；验证预测从 2011-01 开始；2017-01 冻结模型超参数、预测收缩及模型族选择，回归系数仍逐月重估。
+只有在冻结前严格兑现的验证标签可参与选择；一年目标的最后验证买入月为 2015-12，
+一月目标为 2016-11。测试预测始于 2017-01，收益须在 2022-12 前兑现；后续期间另报。
+
+CP15 遵循趋势通胀 DMA(120 月、v=0.987)、逐期限收益率去趋势、一年周期及 2–20 年平均周期，
+并用按期限标准化的 2–20 年收益构造单一指数，再预测 2–5 年各期限。曲线改用 GSW，属于数据适配；
+一月目标是相同构造在另一预测期的扩展，不冒充原文一年期结果。核心通胀来自 FRED CPILFESL（修订值）；
+历史版本使用当时 FRED-MD 的 CPIAUCSL 总通胀，是 CP15 讨论过的替代通胀口径。
+headline_revised 完全沿用 headline_vintage 的参数及收缩，形成同口径版本对照。
+
+CP_EMA3/6/12 用对应半衰期平滑五个远期利率后重新估计共同指数，是文献启发的历史信息扩展，
+没有声称复现 Feunou–Fontaine 的完整无套利 Gaussian DTSM。Full_OLS 联合六个指数；
+PCA5 及 FullPCA 单列。ElasticNet/XGBoost 分别保留真实数据和 Gaussian Copula 增强对照；
+后者仅拟合成熟训练 X/Y 的经验边际与高斯依赖，加入同等数量合成行，不增加独立历史样本。
+Optuna 分别只在验证期选择 12/16 个 EN/XGB 候选。收缩 λ 在相同验证期按四期限 MSE 一次拟合，范围 [0,1]，
+之后不按测试成绩调节。预先指定展示 XGB_GC_cal，同时报告验证期选中的模型及全部失败对照。
+一年预测的主评价有 60 个买入月份（2017-01–2021-12），实现于 2018-01–2022-12；
+一月交易有 71 个买入月份（2017-01–2022-11），实现于 2017-02–2022-12。截图未提供原代码，
+本节验证其方法路线，不声称逐项重现其未披露的样本日期、因子、调参和交易设定。
+[BLS 确认 2025-10 CPI 发布中断](https://www.bls.gov/cpi/additional-resources/2025-federal-government-shutdown-impact-cpi-faq.htm)，
+完整 DMA 窗口从 2025-12 预测起缺失；不回填未来数据，全部面板后续评价统一截至 2025-12 的已实现收益。
+
+| 面板 | 一年预测模型 | 2y R² (%) | 3y | 4y | 5y | 篮子 R² (%) |
+| --- | --- | --- | --- | --- | --- | --- |
+| core_revised | CP05 | -1.34 | -2.63 | -3.81 | -4.70 | -3.63 |
+| core_revised | LN6 | -375510.70 | -434695.42 | -448664.97 | -435628.42 | -434621.81 |
+| core_revised | CP15 | 8.77 | 8.07 | 7.24 | 6.30 | 7.63 |
+| core_revised | CP_EMA6 | 5.92 | 5.89 | 5.36 | 4.72 | 5.36 |
+| core_revised | Full_OLS | -17694.04 | -61014.36 | -98186.12 | -125307.14 | -87436.29 |
+| core_revised | EN_real_cal | 6.82 | 7.88 | 8.72 | -156.00 | -16.39 |
+| core_revised | EN_GC_cal | 5.96 | 8.07 | 9.80 | 10.81 | 9.34 |
+| core_revised | XGB_real_cal | 2.23 | 3.26 | 4.46 | 5.46 | 4.46 |
+| core_revised | XGB_GC_cal | 4.72 | 7.51 | 9.72 | 11.49 | 9.43 |
+| core_revised | ValidationSelected | 5.96 | 8.07 | 9.80 | 10.81 | 9.34 |
+| headline_vintage | CP05 | -1.34 | -2.63 | -3.81 | -4.70 | -3.63 |
+| headline_vintage | LN6 | -210887.52 | -243624.03 | -248001.81 | -237838.83 | -240214.77 |
+| headline_vintage | CP15 | 2.71 | 3.84 | 5.07 | 6.40 | 5.15 |
+| headline_vintage | CP_EMA6 | 5.92 | 5.89 | 5.36 | 4.72 | 5.36 |
+| headline_vintage | Full_OLS | -9655.32 | -29618.46 | -40833.30 | -44709.43 | -35493.40 |
+| headline_vintage | EN_real_cal | 0.54 | -96.08 | -1064.09 | -1130.85 | -607.26 |
+| headline_vintage | EN_GC_cal | -2390.92 | -7627.03 | -4408.80 | -1132.13 | -3214.32 |
+| headline_vintage | XGB_real_cal | -2.84 | -4.28 | -3.97 | -3.05 | -3.48 |
+| headline_vintage | XGB_GC_cal | -0.70 | -3.12 | -4.15 | -5.70 | -4.15 |
+| headline_vintage | ValidationSelected | -2390.92 | -7627.03 | -4408.80 | -1132.13 | -3214.32 |
+
+| 面板/期间 | 月度交易模型 | CAGR (%) | 年均超额收益 (%) | 夏普 | 月末回撤 (%) |
+| --- | --- | --- | --- | --- | --- |
+| core_revised/test | EH/frozen | 0.43 | -0.64 | -0.24 | -10.28 |
+| core_revised/test | CP15/frozen | 1.46 | 0.35 | 0.56 | -0.19 |
+| core_revised/test | XGB_GC_cal/frozen | 0.89 | -0.20 | -0.13 | -4.35 |
+| core_revised/test | ValidationSelected/frozen | 0.89 | -0.20 | -0.13 | -4.35 |
+| core_revised/test | PriorEW3/frozen | 1.68 | 0.59 | 0.31 | -3.51 |
+| core_revised/test | BuyHold | 0.43 | -0.64 | -0.24 | -10.28 |
+| headline_vintage/test | EH/frozen | 0.43 | -0.64 | -0.24 | -10.28 |
+| headline_vintage/test | CP15/frozen | 1.28 | 0.18 | 0.11 | -3.69 |
+| headline_vintage/test | XGB_GC_cal/frozen | 0.48 | -0.59 | -0.22 | -10.36 |
+| headline_vintage/test | ValidationSelected/frozen | 0.48 | -0.59 | -0.22 | -10.36 |
+| headline_vintage/test | PriorEW3/frozen | 1.52 | 0.42 | 0.22 | -3.82 |
+| headline_vintage/test | BuyHold | 0.43 | -0.64 | -0.24 | -10.28 |
+
+| 面板 | 一年篮子模型 | 主评价 R² (%) | 原始 HAC p | 联合 max-t p | 后续期间 R² (%) |
+| --- | --- | --- | --- | --- | --- |
+| core_revised | CP15 | 7.63 | 0.424 | 0.746 | 32.97 |
+| core_revised | XGB_GC_cal | 9.43 | 0.302 | 0.683 | 41.11 |
+| core_revised | ValidationSelected | 9.34 | 0.306 | 0.686 | 45.12 |
+| headline_vintage | CP15 | 5.15 | 0.332 | 0.692 | 25.87 |
+| headline_vintage | XGB_GC_cal | -4.15 | 0.567 | 0.938 | 60.07 |
+| headline_vintage | ValidationSelected | -3214.32 | 0.891 | 1.000 | 69.05 |
+
+| 面板 | 月度模型 | 年化月 CER 对 EH 差 (bps) | 配对区块 95% 区间 (bps) |
+| --- | --- | --- | --- |
+| core_revised | CP15/frozen | 116.7 | [-203.8, 462.4] |
+| core_revised | XGB_GC_cal/frozen | 56.4 | [-115.7, 238.3] |
+| core_revised | PriorEW3/frozen | 131.8 | [0.0, 334.5] |
+| headline_vintage | CP15/frozen | 93.4 | [-116.1, 349.1] |
+| headline_vintage | XGB_GC_cal/frozen | 6.2 | [-9.4, 25.9] |
+| headline_vintage | PriorEW3/frozen | 115.1 | [-9.7, 307.8] |
+
+一年期的统计预测表与一月期的交易表使用分别重新拟合的目标，不能混成同一模型的预测与投资业绩。
+一年预测不直接作为月收益复利。月度交易沿用同债券折旧重定价、实际现金收益、入场费预留、
+γ=5、多头上限 1 与单边 0.5bps；另保存 2/5bps。累计主动收益可按月差相加，CAGR 则按净值复利计算，
+两者不混用。另保存 γ=2/10、延迟一月与 120 月风险窗口。效用另按 12×月度 CER 差计算，
+配对 12 月区块给出条件于既有预测的区间，不能称为复合年度 CER 或独立实盘证据。
+完整逐期限原始 HAC、适用的 CW、Holm 与篮子 max-t 校正和后续期间在本地结果表中。
+
+![验证期选择后的预测与交易对照](assets/validated_extension.png)
+
+**研究判断。** CP15 在修订数据和历史总通胀版本均出现正的一年期 OOS R²，平滑远期利率也有改善，
+因此不能由旧模型的失败推断这些因子没有预测价值。XGBoost+Copula 在修订核心通胀面板主期有所改善，
+但没有在历史版本的一年主期重复该优势；验证期选中的 EN_GC 更暴露出疫情外推风险，失败结果保留。
+后续区间一些非线性模型有较高 R²，但区间短、联合校正证据仍有限，不能将其单独挑成全期结论。
+月度主期 CP15 配置优于相同历史均值配置的收益/回撤点估计，但既有 EW3 在该期收益更高；
+CP15 在 2023–2025 月度版本全部持有现金，较高总收益来自现金利息，不解释为债券超额收益。
+本轮增加可复核的因子和模型证据，保留原有 EW3 候选，不因新模型名或短期排名替换主策略。
+
+来源：[CP15 作者页面](https://pavol.povala.com/publication/2015_journal_cieslak_povala_rfs/)、
+[核心 CPI](https://fred.stlouisfed.org/series/CPILFESL)、
+[期限结构历史信息](https://publications.gc.ca/site/eng/465305/publication.html)。
+复现：`uv sync --extra report --extra research`，先运行 `python scripts/fetch_literature_inputs.py`，
+然后 `OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python scripts/validate_and_extend.py --update-readme`。
+本地 `output/validated_extension/` 保留参数、全部 Optuna trial、验证预测、逐期截止日、预测及交易流水；原始数据不上传。
+<!-- VALIDATED_EXTENSION:END -->
+
 ## 6. 已修复的问题与仍然存在的边界
 
 | 已修复 | 现在如何处理 |
@@ -995,9 +1157,11 @@ $$\lambda_t=\operatorname{clip}\left(\frac{\sum_s d_s(y_s-b_s)}{\sum_s d_s^2},0,
 | `fred_md_vintages_1999_2014.zip` | 宏观历史版本实验；直接读取 ZIP 内按月份命名的 CSV，无需解压 | [官方历史版本 1999-08–2014-12](https://www.stlouisfed.org/-/media/project/frbstl/stlouisfed/research/fred-md/historical_fred-md.zip)，2026-10-22 下载 |
 | `fred_md_vintages_2015_2025.zip` | 同上；每份文件使用自身变换码与可用面板 | [官方历史版本 2015-01–2025-12](https://www.stlouisfed.org/-/media/project/frbstl/stlouisfed/research/fred-md/historical-vintages-of-fred-md-2015-01-to-2025-12.zip)，2026-10-22 下载 |
 | `F-F_Research_Data_Factors_CSV.zip` | 仅新增月度策略使用；只读取月度 `RF`，按下一月持有期对齐，不使用股票因子 | [Kenneth French 官方文件](https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_Factors_CSV.zip)及[字段说明](https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/Data_Library/f-f_factors.html)，2026-10-22 下载，文件版本 2026-08；2024-05 前 RF 来自 Ibbotson，之后来自 ICE BofA 一月国库券指数 |
-| `RFS2009.xls`（可选） | 仅用于 `code/replicate_papers.py` 末尾的历史数据对照；缺失时跳过对照，不参与主预测因子构造 | [Ludvigson 数据页](https://www.sydneyludvigson.com/data-and-appendixes)中 2009 RFS 与 Factor Analysis 数据入口；保留原工作表结构 |
+| `RFS2009.xls` | §5.5 必需；作者原始八 PC、CP/LN 指数及实现月份年度收益，仅作描述复现，不进入 OOS | [作者原始文件](https://www.sydneyludvigson.com/s/RFS2009.xls)及 [数据说明页](https://www.sydneyludvigson.com/data-and-appendixes) |
+| `LN_handbook_replication.zip` | §5.5 必需；读取作者 MATLAB 原始宏观矩阵、变换码和参考 PC，保留 ZIP 原结构 | [作者复现包](https://www.sydneyludvigson.com/s/DataReplicationFiles.zip)，Handbook 2007 版本，区别于 RFS2009 的 132 序列版本 |
+| `CPILFESL.csv` | CP15 核心 CPI，日期列及 `CPILFESL` 水平列；当前修订版本，不能当作严格实时输入 | [FRED 官方核心 CPI](https://fred.stlouisfed.org/series/CPILFESL)，抓取区间 1957-01–2026-04；保留 2025-10 缺失，不用未来值回填 |
 
-默认将文件放入项目根目录下的 `GroupProjectData/`，也可用环境变量 `BOND_RP_DATA_DIR` 指定自己的数据目录。基准报告和文献公式计算只需前三个文件；完整分析还需 GSW 与 FRED-MD；文献脚本可选使用 `RFS2009.xls` 做额外校验。
+默认将文件放入项目根目录下的 `GroupProjectData/`，也可用环境变量 `BOND_RP_DATA_DIR` 指定自己的数据目录。文献数值校验使用 FB、作者文件、GSW、RF 和核心 CPI；`scripts/fetch_literature_inputs.py` 可补齐公开作者文件与核心 CPI，保留已有文件。CRSP/课程输入仍须自行准备，不能保证公开下载同版本价格。
 
 
 ## 8. 安装、复现与测试
@@ -1007,7 +1171,12 @@ Python 3.11 或以上。原始文件放在 `GroupProjectData/`，或通过 `BOND
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -e '.[report]'
+python -m pip install -e '.[report,research]'
+
+# 补齐公开作者校验文件与核心 CPI，先校验原文再进入模型改进
+python scripts/fetch_literature_inputs.py
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python scripts/replicate_literature.py --update-readme
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python scripts/validate_and_extend.py --update-readme
 
 # 数据时点、未来数据扰动、费用恒等式与风险指标的回归测试
 python -m unittest discover -s tests -v
@@ -1053,6 +1222,8 @@ python code/replicate_papers.py
 | scikit-learn | 1.8.0 |
 | statsmodels | 0.14.6 |
 | matplotlib | 3.11.2 |
+| xgboost（research） | 3.2.0 |
+| optuna（research） | 5.0.0 |
 <!-- END ENVIRONMENT -->
 
 ## 9. 项目结构

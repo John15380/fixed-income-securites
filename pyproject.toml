@@ -15,6 +15,10 @@ dependencies = [
 
 [project.optional-dependencies]
 report = ["matplotlib>=3.8"]
+research = [
+    "optuna>=4,<6",
+    "xgboost>=2.1,<4",
+]
 
 [build-system]
 requires = ["hatchling"]

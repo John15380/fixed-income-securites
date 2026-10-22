@@ -12,6 +12,23 @@ REFERENCE_MODELS = ("EH", "FB_n", "CP_2stage", "LN6_2stage", "LN5_2stage", "LN8_
 NESTED_AVERAGE_OLS = {"CP_2stage", "LN6_2stage", "LN5_2stage", "LN8_2stage", "CP_LN_raw"}
 
 
+def common_index(X, y, current, *, second_intercept=True):
+    """OLS average-return index followed by maturity loadings.
+
+    CP (2005), eq. (2), restricts the second stage to b_n * index: the
+    first-stage index already contains a constant. LN Table 2 includes a
+    separate intercept. This function is shared by replication and forecasts.
+    """
+    y = np.asarray(y, dtype=float)
+    first = LinearRegression().fit(X, y.mean(axis=1))
+    index = first.predict(X).reshape(-1, 1)
+    now = first.predict(current).reshape(-1, 1)
+    second = LinearRegression(fit_intercept=second_intercept).fit(index, y)
+    prediction = second.predict(now)
+    np.testing.assert_allclose(prediction.mean(axis=1), now.ravel(), atol=1e-7, rtol=1e-7)
+    return prediction, first, second
+
+
 def reference_features(bonds, macro, lag=2):
     features = available_features(bonds, macro, publication_lag=lag)
     return features.join(bonds[[f"fs{n}" for n in range(2, 6)]])
@@ -51,15 +68,14 @@ def fit_reference(train, current, macro_columns, targets, *, macro_history=None)
     predictions["FB_n"] = np.column_stack(fb)
     indices, current_indices, first_stages = {}, {}, {}
     for name, (X, x, columns) in designs.items():
-        fit = LinearRegression().fit(X, average)
+        prediction, fit, second = common_index(X, y, x, second_intercept=name != "CP")
         first_stages[name] = {"X": X, "names": columns, "fit": fit}
         if name == "CP_LN_raw":
             predictions[name] = LinearRegression().fit(X, y).predict(x)
             continue
         indices[name] = fit.predict(X).reshape(-1, 1)
         current_indices[name] = fit.predict(x).reshape(-1, 1)
-        second = LinearRegression().fit(indices[name], y)
-        predictions[name+"_2stage"] = second.predict(current_indices[name])
+        predictions[name+"_2stage"] = prediction
         # Averaging the second-stage fits must reproduce the first-stage forecast.
         np.testing.assert_allclose(predictions[name+"_2stage"].mean(axis=1),
                                    fit.predict(x), rtol=1e-7, atol=1e-7)

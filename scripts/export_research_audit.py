@@ -292,8 +292,9 @@ def main():
                   f"探索性历史回测中，仅多头、无杠杆 LN 配置在 1990–2025 年的 35 笔年度交易上，"
                   f"扣费 CAGR 为 {row.cagr_pct:.2f}%、超额夏普 {row.sharpe:.2f}；"
                   "采用拟合零息曲线与所列交易假设，优势尚未达到统计确认，非实盘业绩。")
-        content = re.sub(r"(<!-- BEGIN RESUME -->).*?(<!-- END RESUME -->)",
-                         lambda m: m[1]+"\n"+resume+"\n"+m[2], content, flags=re.S)
+        if "<!-- BEGIN TRADING_DESIGNS -->" not in content:
+            content = re.sub(r"(<!-- BEGIN RESUME -->).*?(<!-- END RESUME -->)",
+                             lambda m: m[1]+"\n"+resume+"\n"+m[2], content, flags=re.S)
         path.write_text(content)
     print("Exported specification audit and three figures", flush=True)
 

@@ -232,7 +232,8 @@ def main():
                   f"410 个非重叠月收益上，扣费 CAGR {r.cagr_pct:.2f}%、月度年化超额夏普 {r.sharpe:.2f}；"
                   "同期被动约为 4.47%/0.58。收益基于拟合零息曲线及所列成本假设，非实盘记录；"
                   "历史搜索与独立验证边界详见策略研究部分。")
-        content = re.sub(r"(<!-- BEGIN RESUME -->).*?(<!-- END RESUME -->)", lambda m: m[1]+"\n"+resume+"\n"+m[2], content, flags=re.S)
+        if "<!-- BEGIN REFINEMENT_STUDY -->" not in content:
+            content = re.sub(r"(<!-- BEGIN RESUME -->).*?(<!-- END RESUME -->)", lambda m: m[1]+"\n"+resume+"\n"+m[2], content, flags=re.S)
         path.write_text(content)
     print("Exported monthly-design report, confidence intervals and two figures", flush=True)
 

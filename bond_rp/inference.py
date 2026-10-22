@@ -49,3 +49,34 @@ def block_bootstrap_t(values, *, lags=18, block=24, replications=1999, seed=42):
     simulated = mean_hac_t(null, lags)
     p = (1+np.count_nonzero(simulated >= observed))/(replications+1)
     return {"statistic": observed, "bootstrap_p": p, "block": block, "replications": replications}
+
+
+def joint_block_bootstrap_t(differences, *, lags=6, block=12, replications=1999, seed=42):
+    """Paired, centered-null max-t test across a disclosed set of forecast paths.
+
+    Columns are models, rows are common consecutive dates. Every bootstrap draw
+    keeps the models together and re-estimates the HAC standard error. This
+    controls this experiment's comparison family, conditional on the forecasts;
+    it does not cover prior undocumented research or re-estimate latent factors.
+    """
+    d = np.asarray(differences, dtype=float)
+    if d.ndim != 2 or d.shape[0] < 3 or not np.isfinite(d).all():
+        raise ValueError("Expected a finite date-by-model matrix")
+    n, m = d.shape
+    if not m or not 1 <= block <= n or replications < 99:
+        raise ValueError("Invalid model count, block length or replication count")
+    observed = mean_hac_t(d.T, lags)
+    centered = d-d.mean(axis=0)
+    rng = np.random.default_rng(seed)
+    counts, adjusted = np.zeros(m), np.zeros(m)
+    for begin in range(0, replications, 32):
+        b = min(32, replications-begin)
+        starts = rng.integers(0, n, (b, int(np.ceil(n/block))))
+        ix = ((starts[:, :, None]+np.arange(block)) % n).reshape(b, -1)[:, :n]
+        draws = centered[ix].transpose(0, 2, 1)
+        t = mean_hac_t(draws.reshape(b*m, n), lags).reshape(b, m)
+        counts += (t >= observed).sum(axis=0)
+        adjusted += (t.max(axis=1)[:, None] >= observed).sum(axis=0)
+    return {"statistic": observed, "bootstrap_p": (counts+1)/(replications+1),
+            "max_t_p": (adjusted+1)/(replications+1), "models": m,
+            "block": block, "replications": replications}

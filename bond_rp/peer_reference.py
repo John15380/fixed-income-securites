@@ -71,11 +71,16 @@ def screen_candidates(bonds, candidates):
     return chosen, table
 
 
-def peer_fold(bonds, features, survey, candidates, selected, date, predict_dates=None):
+def peer_fold(bonds, features, survey, candidates, selected, date, predict_dates=None, *, include_lags=False):
     date = pd.Period(date, "M")
     prediction_dates = pd.PeriodIndex([date] if predict_dates is None else predict_dates, freq="M")
     if prediction_dates.min() < date:
         raise ValueError("A forecast batch cannot precede fitting")
+    # Slide 11 explicitly adds one lag per predictor in L3. Slide 12 keeps L4
+    # contemporaneous. Evaluate t-1 in the SAME fitted factor/PCA basis as t;
+    # joining scores from the previous outer fit would mix different PC bases.
+    evaluation_dates = prediction_dates.union(prediction_dates-1) if include_lags else prediction_dates
+    requested = evaluation_dates.get_indexer(prediction_dates)
     history = features.loc["1994-01":str(prediction_dates.max())]
     mc = [c for c in features if c.startswith("macro::")]
     train = history.loc[history.index+12 < date]
@@ -83,7 +88,7 @@ def peer_fold(bonds, features, survey, candidates, selected, date, predict_dates
     train = train.loc[valid]
     if len(train) < 120:
         raise ValueError("Too few mature annual returns")
-    now = features.loc[prediction_dates]
+    now = features.loc[evaluation_dates]
     y = bonds.loc[train.index, [f"rx{n}" for n in range(2, 6)]].to_numpy()
     pca = _numeric_pipeline(pca=True).fit(train[mc])
     Z, z = pca.transform(train[mc]), pca.transform(now[mc])
@@ -103,11 +108,11 @@ def peer_fold(bonds, features, survey, candidates, selected, date, predict_dates
     positions = history.index.get_indexer(train.index)
     ms = MS17Regression().fit(f, y, positions)
     factors = ms.factor(f)
-    base["recursive_factor"], current["recursive_factor"] = factors[positions], factors[history.index.get_indexer(prediction_dates)]
+    base["recursive_factor"], current["recursive_factor"] = factors[positions], factors[history.index.get_indexer(evaluation_dates)]
     scol = [c for c in survey if c != "release_date"]
     sp = _numeric_pipeline().fit(survey.loc[train.index, scol])
     spca = PCA(n_components=3, svd_solver="full").fit(sp.transform(survey.loc[train.index, scol]))
-    SX, sx = spca.transform(sp.transform(survey.loc[train.index, scol])), spca.transform(sp.transform(survey.loc[prediction_dates, scol]))
+    SX, sx = spca.transform(sp.transform(survey.loc[train.index, scol])), spca.transform(sp.transform(survey.loc[evaluation_dates, scol]))
     me = LinearRegression().fit(SX, y.mean(1))
     base["ME_factor"], current["ME_factor"] = me.predict(SX), me.predict(sx)
     for n in range(2, 6):
@@ -117,7 +122,7 @@ def peer_fold(bonds, features, survey, candidates, selected, date, predict_dates
     # Only selected macro-template features enter these PCs, not raw LN PCs.
     imp, scale = SimpleImputer(strategy="mean"), StandardScaler()
     C = scale.fit_transform(imp.fit_transform(candidates.loc[train.index, selected]))
-    c = scale.transform(imp.transform(candidates.loc[prediction_dates, selected]))
+    c = scale.transform(imp.transform(candidates.loc[evaluation_dates, selected]))
     agent_pca = PCA(n_components=5, svd_solver="full").fit(C)
     PC, pc = agent_pca.transform(C), agent_pca.transform(c)
     blocks = {"L1_FB": (X[:, :4], x[:, :4]), "L1_CP05": (X[:, [4]], x[:, [4]]),
@@ -132,15 +137,32 @@ def peer_fold(bonds, features, survey, candidates, selected, date, predict_dates
     # in this reporting layer would silently turn the verified factor models
     # into different regressions (CP05 Eq.2; Feunou-Fontaine Eqs.3-4).
     prediction["L1_CP05"] = refs["CP05"]
-    prediction["L1_MS17"] = factors[history.index.get_indexer(prediction_dates), None]*ms.loadings_
+    prediction["L1_MS17"] = factors[history.index.get_indexer(evaluation_dates), None]*ms.loadings_
     prediction["L1_FB"] = np.column_stack([LinearRegression().fit(X[:, [j]], y[:, j]).predict(x[:, [j]])
                                             for j in range(4)])
     full, point = blocks["L2_Incr"]
     scaler = StandardScaler().fit(full)
-    return dict(X=scaler.transform(full), x=scaler.transform(point), y=y, train_dates=train.index, dates=prediction_dates,
+    fitted, evaluated = scaler.transform(full), scaler.transform(point)
+    for name in prediction:
+        if name == "EH":
+            prediction[name] = np.tile(y.mean(0), (len(prediction_dates), 1))
+        else:
+            prediction[name] = prediction[name][requested]
+    result = dict(X=fitted, x=evaluated[requested], y=y, train_dates=train.index, dates=prediction_dates,
                 reference=prediction, audit=dict(ym=str(date), n_train=len(train),
                     last_label_end=str(train.index.max()+12), macro_reference=str(date-2),
                     survey_release=str(survey.loc[date, "release_date"].date()), ms17_alpha=float(ms.alpha_),
                     ms17_converged=ms.converged_, agent_explained5=float(agent_pca.explained_variance_ratio_.sum()),
                     n_features=15, selected_candidates=len(selected)),
                 names=BASE_NAMES+[f"PC{n}" for n in range(1, 6)])
+    if include_lags:
+        lagged = pd.DataFrame(fitted, index=train.index).reindex(train.index-1).to_numpy()
+        keep = np.isfinite(lagged).all(1)
+        lag_X = np.column_stack([fitted[keep], lagged[keep]])
+        lag_x = np.column_stack([evaluated[requested], evaluated[evaluation_dates.get_indexer(prediction_dates-1)]])
+        lag_scaler = StandardScaler().fit(lag_X)
+        result["lagged"] = dict(X=lag_scaler.transform(lag_X), x=lag_scaler.transform(lag_x),
+            y=y[keep], train_dates=train.index[keep], dates=prediction_dates,
+            names=result["names"]+[name+"__lag1" for name in result["names"]])
+        result["audit"].update(l3_features=30, l3_n_train=int(keep.sum()), l3_lag_months=1)
+    return result

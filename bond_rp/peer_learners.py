@@ -30,18 +30,22 @@ def xgb_predict(fold, config):
 
 
 def elastic_predict(fold, *, copula=False):
-    X, y, x = fold["X"], fold["y"], fold["x"]
+    # Slide 11: current predictors plus their one-month lags (30 columns).
+    # L4's xgb_predict deliberately continues to use the 15 current columns.
+    design = fold.get("lagged", fold)
+    X, y, x = design["X"], design["y"], design["x"]
     alphas, l1s = np.logspace(0, -3, 10), (.1, .5, .9)
     losses = np.zeros((len(l1s), len(alphas), 4))
     audited = []
     for inner in fold["inner_folds"]:
-        if len(inner["y"]) < 24:
+        inner_design = inner.get("lagged", inner)
+        if len(inner_design["y"]) < 24:
             raise ValueError("Insufficient history after inner annual purge")
         # Supervised literature indices, macro PCA and feature PCA are all
         # independently rebuilt at the inner training boundary by the runner.
-        a, b = inner["X"], inner["x"]
-        mean, std = inner["y"].mean(0), np.maximum(inner["y"].std(0), 1e-8)
-        target = (inner["y"]-mean)/std
+        a, b = inner_design["X"], inner_design["x"]
+        mean, std = inner_design["y"].mean(0), np.maximum(inner_design["y"].std(0), 1e-8)
+        target = (inner_design["y"]-mean)/std
         a, target = augment(a, target, 1. if copula else 0., 120)
         center, location = a.mean(0), target.mean(0)
         for j in range(4):

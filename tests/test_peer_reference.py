@@ -102,7 +102,7 @@ class PeerReferenceTests(unittest.TestCase):
         survey=pd.DataFrame(rng.normal(size=(len(bonds),24)),index=bonds.index)
         survey["release_date"]=(survey.index-1).to_timestamp()
         candidates=pd.DataFrame(rng.normal(size=(len(bonds),8)),index=bonds.index,columns=[f"c{j}" for j in range(8)])
-        before=peer_fold(bonds,make_features(bonds,macro,cpi),survey,candidates,list(candidates),date)
+        before=peer_fold(bonds,make_features(bonds,macro,cpi),survey,candidates,list(candidates),date,include_lags=True)
         # Independent CP05 Eq.2: the second stage has loadings but no new
         # intercept, even in the reference model's final reporting wrapper.
         y=before["y"]
@@ -117,11 +117,35 @@ class PeerReferenceTests(unittest.TestCase):
         changed.loc[changed.index+12>=date,targets]+=1e6
         m=macro.copy();m.loc[m.index>date-2]+=1e6
         c=cpi.copy();c.loc[c.index>date-2]*=100
-        after=peer_fold(changed,make_features(changed,m,c),survey,candidates,list(candidates),date)
+        after=peer_fold(changed,make_features(changed,m,c),survey,candidates,list(candidates),date,include_lags=True)
         np.testing.assert_array_equal(before["X"],after["X"])
         np.testing.assert_array_equal(before["x"],after["x"])
         np.testing.assert_array_equal(before["y"],after["y"])
         self.assertEqual(before["X"].shape[1],15)
+        np.testing.assert_array_equal(before["lagged"]["X"],after["lagged"]["X"])
+        np.testing.assert_array_equal(before["lagged"]["x"],after["lagged"]["x"])
+        self.assertEqual(before["lagged"]["X"].shape[1],30)
+
+    def test_l3_lags_use_calendar_months_and_the_same_fitted_factor_basis(self):
+        from test_tuning_features import synthetic_inputs
+        from bond_rp.validated_models import make_features
+        from bond_rp.peer_reference import peer_fold
+        bonds,macro,cpi=synthetic_inputs()
+        rng=np.random.default_rng(84);date=pd.Period("2017-01","M")
+        survey=pd.DataFrame(rng.normal(size=(len(bonds),24)),index=bonds.index)
+        survey["release_date"]=(survey.index-1).to_timestamp()
+        candidates=pd.DataFrame(rng.normal(size=(len(bonds),8)),index=bonds.index,columns=list("abcdefgh"))
+        f=peer_fold(bonds,make_features(bonds,macro,cpi),survey,candidates,list(candidates),date,
+                    predict_dates=[date,date+1],include_lags=True)
+        history=pd.DataFrame(f["X"],index=f["train_dates"])
+        previous=history.reindex(f["lagged"]["train_dates"]-1).to_numpy()
+        expected=(previous-previous.mean(0))/previous.std(0)
+        np.testing.assert_allclose(f["lagged"]["X"][:,15:],expected,atol=1e-12)
+        # The lagged predictors at t+1 must be exactly the t predictors, merely
+        # rescaled with the lag block's training mean/variance.
+        expected_now=(f["x"][0]-previous.mean(0))/previous.std(0)
+        np.testing.assert_allclose(f["lagged"]["x"][1,15:],expected_now,atol=1e-12)
+        self.assertEqual(len(f["lagged"]["y"]),len(f["y"])-1)
 
 
 if __name__=="__main__":

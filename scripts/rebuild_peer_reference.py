@@ -31,6 +31,7 @@ PROTOCOL = dict(train_start="1994-01", screening_end="2009-12", validation_start
     validation_end="2016-12", freeze="2017-01", test_start="2017-01", test_end="2022-12",
     horizon=12, strict_label_rule="purchase+12 < decision", macro_lag=2,
     preprocessing="matured training rows only", n_estimators=100, max_depth=2,
+    l3_features=30, l3_predictor_lag_months=1, l4_features=15,
     xgb_trials_per_group=32, seeds=[42, 73], elasticnet="rolling purged inner CV; copula fitted inside folds",
     allocation_trials=128, gamma=5., cap=1., base_cost_bps=0.,
     cases=["dispersion", "expectations"], main_case="dispersion",
@@ -50,7 +51,7 @@ ASSUMPTIONS = [
          implementation="Four FS +CP05+MS+CP15+LN5+LN6+ME; five PCs from screened generated features.",
          limitation="Full membership inferred from the top-feature chart plus the stated count; PC explained variance is measured, not forced to 93%."),
     dict(pages="11,12", item="learners", disclosed="dynamic ElasticNetCV; rolling copula; XGB depth2/100trees and strong L1/L2",
-         implementation="Purged inner CV, training-only copula; XGB32 validation trials/group, two seeds; disclosed tree count and depth fixed.",
+         implementation="L3 uses 15 current predictors plus their one-month lags; L4 uses 15 current predictors. Purged inner CV and training-only copula; fixed depth2/100 trees.",
          limitation="Remaining penalties, GC size/window, seeds, and search range are not disclosed. Explicit validation-only ranges saved."),
     dict(pages="16-19", item="investment", disclosed="per-maturity mu/(gamma variance); positive signals; rolling60 MV; B,lambda_dd,lambda_g",
          implementation="Annual means/variance set per-maturity weights; monthly aging-bond NAV. Convex L2 exposure penalty and causal drawdown budget.",
@@ -144,7 +145,7 @@ def run_case(case, output, data):
     else:
         folds = {}
         for date in dates:
-            folds[date] = peer_fold(bonds, features, surveys[case], candidates, selected, date)
+            folds[date] = peer_fold(bonds, features, surveys[case], candidates, selected, date, include_lags=True)
             if date.month == 1:
                 print(f"  {case}: fifteen-feature fold {date}", flush=True)
         cache.write_bytes(pickle.dumps(folds, protocol=pickle.HIGHEST_PROTOCOL)); (folder/"fold_key.txt").write_text(key)
@@ -169,7 +170,7 @@ def run_case(case, output, data):
             start, end = validation_dates[0], validation_dates[-1]
             if (start,end) not in inner_cache:
                 inner = peer_fold(bonds, features, surveys[case], candidates, selected, start,
-                                  predict_dates=validation_dates)
+                                  predict_dates=validation_dates, include_lags=True)
                 inner["validation_y"] = bonds.loc[validation_dates,[f"rx{n}" for n in range(2,6)]].to_numpy()
                 inner_cache[(start,end)] = inner
             fold["inner_folds"].append(inner_cache[(start,end)])

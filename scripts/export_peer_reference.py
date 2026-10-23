@@ -50,6 +50,7 @@ def audit_and_scores(output,bonds):
         assert (pd.PeriodIndex(audit.macro_reference,freq="M")==d-2).all()
         assert (pd.to_datetime(audit.survey_release).to_numpy()<=d.to_timestamp(how="end").to_numpy()).all()
         assert audit.n_features.eq(15).all() and audit.ms17_converged.all()
+        assert audit.l3_features.eq(30).all() and audit.l3_lag_months.eq(1).all()
         en=json.loads((folder/"elasticnet_cv_audit.json").read_text())
         en_parameters={(r["ym"],r["model"]):r["parameters"] for r in en}
         for record in en:
@@ -70,11 +71,12 @@ def audit_and_scores(output,bonds):
             repeated=dict(fold["reference"])
             for model in ("L4_Real","L4_GC"):
                 repeated[model]=xgb_predict(fold,parameters[model])
-            mean,std=fold["y"].mean(0),np.maximum(fold["y"].std(0),1e-8)
+            l3=fold["lagged"]
+            mean,std=l3["y"].mean(0),np.maximum(l3["y"].std(0),1e-8)
             for model in ("L3_Real","L3_GC"):
-                X,Y=augment(fold["X"],(fold["y"]-mean)/std,1. if model.endswith("GC") else 0.,120)
+                X,Y=augment(l3["X"],(l3["y"]-mean)/std,1. if model.endswith("GC") else 0.,120)
                 config=en_parameters[(str(date),model)]
-                repeated[model]=np.column_stack([ElasticNet(max_iter=100000,tol=1e-5,**config[j]).fit(X,Y[:,j]).predict(fold["x"])
+                repeated[model]=np.column_stack([ElasticNet(max_iter=100000,tol=1e-5,**config[j]).fit(X,Y[:,j]).predict(l3["x"])
                     for j in range(4)])*std+mean
             for model,values in repeated.items():
                 saved=indexed.loc[(date,model),[f"mu{n}" for n in range(2,6)]].to_numpy(dtype=float)
@@ -172,7 +174,7 @@ def figures(output,scores):
             ax.plot(dates,np.r_[1.,np.cumprod(1+g.return_net)],label=label,color=color,linewidth=1.8)
         ax.set_title(case+": actual monthly net wealth (no cost, as undisclosed in slides)")
         ax.set_ylabel("Initial wealth = 1");ax.legend(fontsize=8,frameon=False);ax.grid(alpha=.15)
-    fig.suptitle("Reference pages 1-22: 15 inputs, actual MS factor, SPF, full validation, depth2 / 100 trees\nUnspecified source inputs / execution equations are marked assumptions; heatmap colors clipped at +/-40%",fontsize=11)
+    fig.suptitle("Reference pages 1-22: L3 uses 15 current + 15 lagged inputs; L4 uses 15 current inputs\nActual MS factor / SPF; unknown source and execution details remain assumptions; colors clipped at +/-40%",fontsize=11)
     fig.savefig(ROOT/"assets"/"peer_reference.png",dpi=170);plt.close(fig)
 
 
@@ -188,7 +190,7 @@ def report(output,scores,counts):
         "| 3、9、13 | 六类文献因子，图中含四个利差、LN F5/F6、recursive factor、CP15、ME | Full10：四利差＋CP05＋MS＋CP15＋LN5＋LN6＋ME；完整十列由图与总数推定，变量名全部保存 |",
         "| 4–5 | 约 20 原序列生成 82 候选；绝对 t 值>2.5；筛选截至 2009-12；PC1–5 | 原 82 列清单和公式未给出；本次公开 20×4＋2 的确定模板，不能称为原清单 |",
         "| 6–7 | 1994–2010 / 2011–2016 / 2017–2022；12 月隔离；训练集预处理 | 恢复完整验证段，按日历剔除未兑现标签；成熟训练行拟合填补、缩放与 PCA |",
-        "| 11–12 | 动态 ElasticNetCV、滚动 Copula；XGB 深度 2、100 树、强 L1/L2 | EN 使用三个隔离时间折并重建因子，Copula 在内折训练内拟合；其余正则/GC范围是明确列出的验证期设定 |",
+        "| 11–12 | L3各变量加滞后项；L4使用15个当期变量；动态ElasticNetCV、Copula；XGB深度2、100树 | 已补齐L3的15＋15列；当前及滞后值用同一外层训练基底，内折也重建；L4仍15列；其余正则/GC范围为验证期设定 |",
         "| 16–19 | 各期限正信号、多头、60 月滚动 MV、B/λdd/λg 执行校准 | 按年预测及年风险定仓、真实月价格计净值；具体惩罚方程、γ、仓位上限、费用与优化目标未披露，采用的公式与范围均标为假设 |","",
         "**修正此前对 MS17 的理解。** Feunou–Fontaine 原文 §2.2 的式(3)本身就是可独立估计的递归预测因子，",
         "无须先估计完整无套利 DTSM：$R_t=(1-\u03b1)\u03b3^\u2032[1,f_t]+\u03b1R_{t-1}$，再令 $rx_t^n=b_nR_t+u_t^n$。",

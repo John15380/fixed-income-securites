@@ -4,7 +4,9 @@
 
 **先验证文献，再扩展模型。** [原论文数值校验](#literature-replication) 对照作者数据、实际 PDF 原表和独立回归，验证 FB、CP、LN 及 CP15 的构造；CP15 的 GSW 数据适配、历史远期利率、ElasticNet、XGBoost、Gaussian Copula 和验证期调参见 [新增实验](#validated-extension)与[完成后的扩参研究](#completed-tuning)。原作者全样本因子仅用于描述复现，样本外全部重新构造。
 
-**最新完成的扩参结果。** 四组独立实验共运行 768 个候选，分开早段模型选择与晚段投资校准；41 项文献数值检查、75 项回归测试，以及 17,325 条预测和 14,445 笔交易的独立审计通过。历史版本面板在 2017-02–2022-12 的新选中月度策略，校准后扣费 CAGR 0.91%、超额夏普 −0.09；同期 EW3 为 1.52%/0.22，被动为 0.43%/−0.24。本轮扩大调参未超过既有 EW3，完整失败对照、参数边界与效用区间见 §5.7；保留下面的 EW3 历史候选。
+**新增 PDF 对应基线。** [§5.8](#peer-reference) 按前 22 页恢复完整验证段、15 个输入、MS 递归因子、SPF、深度 2/100 树 XGBoost，以及按期限配置的滚动 MV 基准。PPT 的“ME 分歧”和 Eriksen 原文“ME 预期”并列运行，零费校准后 CAGR 为 0.94%/1.30%；对方高夏普尚未数值复现。原 82 个候选清单和执行公式未披露，采用的假设逐页标明，不能称为同代码、同数据的原样复现。
+
+**上一轮独立扩参结果。** 四组独立实验共运行 768 个候选，分开早段模型选择与晚段投资校准；41 项文献数值检查、75 项当轮回归测试，以及 17,325 条预测和 14,445 笔交易的独立审计通过。历史版本面板在 2017-02–2022-12 的新选中月度策略，校准后扣费 CAGR 0.91%、超额夏普 −0.09；同期 EW3 为 1.52%/0.22，被动为 0.43%/−0.24。该轮扩大调参未超过既有 EW3，完整失败对照、参数边界与效用区间见 §5.7；保留下面的 EW3 历史候选。
 
 **研究主线按正式课程要求与原文定义。** [文献基准核对](#coursework-check) 单列 EH、逐期限 FB、两阶段 CP、含三次项的 LN6，以及 LN 原文的 LN5/CP 联合规格，分别报告样本内、一年期样本外和经济价值。[六项研究选择审计](#research-audit) 回答组合、均线周期、起点、风险参数、数据版本及 R² 可比性；[月度配置研究](#trading-designs) 是一月预测期的策略扩展。最新的 [文献驱动改进与策略复核](#refinement-study) 实现 Goh48、sPCA、外推保护、递归收缩和成本感知配置，并与先前的 EW3 候选公平比较。所有新增方案属于已接触历史样本后的探索，不称为预注册。
 
@@ -32,6 +34,7 @@
 | 原论文数值校验（§5.5） | 作者指数重建、原表数值、MATLAB PCA 与生产流程独立校验；修正 CP 第二阶段截距 | FB1987 数据版本差异如实保留；CP/LN 原表与 CP15 数据适配分别披露 |
 | 验证期选择与非线性扩展（§5.6） | CP15、平滑远期利率、EN/XGBoost、Copula 增强；2017 年冻结超参数与收缩 | 原始与校准预测、真实与合成训练、修订与历史版本、主期与后续期全部保留 |
 | 完成扩参与独立投资校准（§5.7） | 两种子、三表示、三窗口、768 个候选；独立晚段 81 点信号校准 | 同时校准 EH，版本对照继承参数；新增方法未超过既有 EW3，搜索和收益局限完整保留 |
+| 新增 PDF 对应基线（§5.8） | 前22页来源映射、10＋5输入、原文MS、两种SPF定义、完整验证段与逐期限配置 | 明确区分已披露设定与重建假设；实际月度净值、预测误差和PPT年化口径分别报告 |
 
 基础报告保留 CP、LN、BW 与 GBM_raw 的等权预测作为比较规格；其固定权重是在修正研究时制定。不同目标与交易频率的结果分别报告，不以事后排名替代选择依据。
 
@@ -1264,8 +1267,8 @@ R² 下界不受零或 −100% 限制。作者样本内公式/数值校验通过
 因此保留 EW3 作为历史投资候选，保留 CP15 的文献预测证据，完整展示非线性方法及校准失败的情形。
 后续 CPI/时期的局部高收益须同时核对现金利息和债券敞口；全现金的正总收益不计作模型 alpha。
 本节同时改变特征、搜索范围和验证分段，与 §5.6 的差异不能单独归因于 trial 数。
-截图中的调查预期分歧 ME 因子数据和完整 MS17 无套利 DTSM 仍未纳入本仓库；平滑远期利率只是明确披露的扩展。
-因此可以复核上述方法链与本仓库结果，尚未逐项复现另一组未提供代码和数据口径的高收益数字。
+该轮没有纳入 SPF 的 ME 或原文 MS 递归因子；新增 PDF 前22页的对应重建、原文 MS 和两种 ME 定义见 §5.8。
+MS 原文 §2.2 的递归预测因子可以独立估计，完整无套利 DTSM 不是复现该单因子的前置条件。
 
 复现：`uv sync --extra research --extra report`，准备 README §7 的原始数据并运行文献输入下载脚本后，执行：
 
@@ -1281,6 +1284,123 @@ python scripts/export_completed_tuning.py --update-readme
 工具实现参考 [Optuna 的可重复性说明](https://optuna.readthedocs.io/en/stable/faq.html#how-can-i-obtain-reproducible-optimization-results)
 和 [XGBoost 多目标接口](https://xgboost.readthedocs.io/en/stable/tutorials/multioutput.html)。
 <!-- COMPLETED_TUNING:END -->
+
+<!-- PEER_REFERENCE:START -->
+<a id="peer-reference"></a>
+### 5.8 按新增 PDF 前 22 页重建的对应基线
+
+参考文件为本地《固定收益证券分析和模型-2026-05-25第3-5节.pdf》前 22 页。
+本节与 §5.7 的自行扩展分开：恢复完整 2011–2016 验证段、按期限配置、60 月滚动均值/方差基准，
+固定 XGBoost 深度 2、100 棵树；实际实现 MS 递归因子和 SPF 因子，并对齐 10＋5 个输入。
+**这是已披露方法的对应重建，不称为同代码、同数据的数值复现。** PDF 未披露的输入及公式见下表，
+不通过挑选测试期成绩填补它们，也不把同名模型视为完全相同模型。
+
+| PDF 页 | 已披露内容 | 本次实现与仍缺的细节 |
+| --- | --- | --- |
+| 3、9、13 | 六类文献因子，图中含四个利差、LN F5/F6、recursive factor、CP15、ME | Full10：四利差＋CP05＋MS＋CP15＋LN5＋LN6＋ME；完整十列由图与总数推定，变量名全部保存 |
+| 4–5 | 约 20 原序列生成 82 候选；绝对 t 值>2.5；筛选截至 2009-12；PC1–5 | 原 82 列清单和公式未给出；本次公开 20×4＋2 的确定模板，不能称为原清单 |
+| 6–7 | 1994–2010 / 2011–2016 / 2017–2022；12 月隔离；训练集预处理 | 恢复完整验证段，按日历剔除未兑现标签；成熟训练行拟合填补、缩放与 PCA |
+| 11–12 | 动态 ElasticNetCV、滚动 Copula；XGB 深度 2、100 树、强 L1/L2 | EN 使用三个隔离时间折并重建因子，Copula 在内折训练内拟合；其余正则/GC范围是明确列出的验证期设定 |
+| 16–19 | 各期限正信号、多头、60 月滚动 MV、B/λdd/λg 执行校准 | 按年预测及年风险定仓、真实月价格计净值；具体惩罚方程、γ、仓位上限、费用与优化目标未披露，采用的公式与范围均标为假设 |
+
+**修正此前对 MS17 的理解。** Feunou–Fontaine 原文 §2.2 的式(3)本身就是可独立估计的递归预测因子，
+无须先估计完整无套利 DTSM：$R_t=(1-α)γ^′[1,f_t]+αR_{t-1}$，再令 $rx_t^n=b_nR_t+u_t^n$。
+本次通过联合非线性最小二乘估计 α、γ、b，约束平均 b=1；R0 取成熟训练均值，保留隔离期内可观察的每个月远期利率。
+α=0.6284 是原文年预测样本的估计结果，不当作未来样本已知参数；此前固定 EMA 半衰期不是这项复现。
+
+**ME 的原文与 PPT 存在定义差异。** Eriksen(2017) §III 使用 GDP、GDP 平减指数、失业率、税后利润、
+工业生产与房屋开工的个体调查预期：每位受访者相对其自身 nowcast 计算未来 1–4 季变化，再取中位数，
+对 24 个序列提取前三 PC 并拟合共同收益指数。PPT 称之为预测分歧；本次并列运行上述原文定义，
+以及相同个体变化的横截面 IQR 分歧定义。季度数据按费城联储的**实际发布日期**映射月末，绝不提前铺到季度首月。
+当前档案可能含历史勘误，不能据此宣称逐字节重现当年数据版本。宏观/CPI 主面板仍是修订值，滞后两月；历史版本检验另见前文。
+
+**真实投资保留年度信号。** 不再另拟合一月收益模型来替代 PDF 的年度模型。每期限使用
+$w_n\propto\max(\hat\mu_n,0)/(\gamma\hat\sigma_n^2)$，均值和方差口径均为年收益；每月按新信号重新定仓，
+下一月将同一债券按剩余期限 n−1/12 重定价，现金计入实际 RF。调仓频率与预测期可以不同，
+年度重叠标签不作为实际月收益复利。B∈[0.1,1]，λdd∈[0,30]，λg∈[0,20]，Optuna 128 候选只优化验证期月超额夏普。
+本实现用因账户历史回撤缩减的预算 B·exp(λdd·DD) 和凸 L2 仓位惩罚；它们是对未披露公式的明确实现假设。
+主表 γ=5、总多头上限 1；PPT 未交代费用，主表先列零费，再保存单边 0.5/2/5bps 敏感性。
+
+**时间标签明确。** 以买入/形成月定义 2017-01–2022-12，共 72 个年预测和 72 笔月交易；
+年标签兑现至 2023-12，月交易卖出至 2023-01。冻结于 2017-01 前，完整验证段内可用的年标签为
+2011-01–2015-12 买入的 60 个，月投资校准为 2011-01–2016-11 的 71 笔。2016 未兑现的年标签不会提前用于调参。
+所有历史期间此前已接触，本节仍属于回溯研究。
+
+| 模型 | PDF 平均逐期限 R² (%) | 本次：分歧 ME | 本次：预期 ME |
+| --- | --- | --- | --- |
+| L1_FB | -8.03 | -0.30 | -0.30 |
+| L1_CP05 | 2.42 | 8.24 | 8.24 |
+| L1_MS17 | 3.48 | -45.61 | -45.61 |
+| L1_CP15 | 13.03 | 17.95 | 17.95 |
+| L1_Macro | 9.20 | -98842.98 | -174297.38 |
+| L1_Full | 15.10 | -439391.33 | -589939.71 |
+| L2_PCA | 3.00 | -15.34 | -15.34 |
+| L2_Incr | -19.90 | -168733.58 | -191743.81 |
+| L3_Real | 4.10 | -139225.58 | -201012.06 |
+| L3_GC | 26.15 | -216080.44 | -316821.14 |
+| L4_Real | 24.25 | 2.22 | 5.12 |
+| L4_GC | 31.77 | 3.30 | -3.77 |
+
+本模板池实际筛出 17 列，首次训练 PC1–5 解释 89.29% 方差；
+PDF 报告 93.0%。这项可观察差异直接说明候选池尚未逐列匹配，不应把新增实验包装为原始输入的复现。
+SPF 原文采用季度频率，这里按实际发布日保持到月末，是月度适配；初筛变量集合固定于 2009 年，内层 EN 验证条件于该初始变量集合。
+
+| ME 定义 | 模型 | 完整验证段可兑现标签的平均 R² (%) | 测试平均 R² (%) |
+| --- | --- | --- | --- |
+| PPT 分歧定义 | L3_Real | 34.82 | -139225.58 |
+| PPT 分歧定义 | L3_GC | 28.12 | -216080.44 |
+| PPT 分歧定义 | L4_Real | 45.45 | 2.22 |
+| PPT 分歧定义 | L4_GC | 51.15 | 3.30 |
+| Eriksen 预期定义 | L3_Real | 33.96 | -201012.06 |
+| Eriksen 预期定义 | L3_GC | 20.74 | -316821.14 |
+| Eriksen 预期定义 | L4_Real | 41.20 | 5.12 |
+| Eriksen 预期定义 | L4_GC | 41.70 | -3.77 |
+
+上表按四期限 R² 的均值对应 PDF 图表；篮子 R² 另存，二者不混用。原始 LN 组合在疫情宏观极值上的外推，
+使线性组合/EN 出现极大负 R²；保留该失败结果，没有为匹配 PPT 的正值自行加截断。
+这需要核对对方原始因子和转换代码，不能据此断言对方发生泄漏，也不能仅由我们未匹配推断其结果不可能。
+
+| ME 定义 | 月度账户（主表零费） | CAGR (%) | 年均超额 (%) | 超额夏普 | 月末回撤 (%) |
+| --- | --- | --- | --- | --- | --- |
+| PPT 分歧定义 | RollingMV/direct | 0.63 | -0.45 | -0.12 | -13.25 |
+| PPT 分歧定义 | L1_CP15/direct | 1.21 | 0.06 | 0.07 | -1.05 |
+| PPT 分歧定义 | L4_Real/direct | 0.87 | -0.24 | -0.09 | -9.43 |
+| PPT 分歧定义 | L4_GC/direct | 0.75 | -0.37 | -0.15 | -8.75 |
+| PPT 分歧定义 | L4_GC/optimized | 0.94 | -0.19 | -0.10 | -6.46 |
+| Eriksen 预期定义 | RollingMV/direct | 0.63 | -0.45 | -0.12 | -13.25 |
+| Eriksen 预期定义 | L1_CP15/direct | 1.21 | 0.06 | 0.07 | -1.05 |
+| Eriksen 预期定义 | L4_Real/direct | 0.94 | -0.18 | -0.08 | -9.22 |
+| Eriksen 预期定义 | L4_GC/direct | 1.16 | 0.03 | 0.02 | -6.83 |
+| Eriksen 预期定义 | L4_GC/optimized | 1.30 | 0.16 | 0.10 | -5.02 |
+
+**收益口径核对。** PDF 第 20 页的 2.51%=15.06%÷6、2.08%≈12.50%÷6、0.58%=3.48%÷6，
+符合累计数除以六的算术口径，不能直接叫 CAGR。若 15.06% 是六年复利总收益，对应 CAGR 应约 2.37%。
+PPT 没有完整给出现金/RF、净值累计和年度目标到交易收益的映射公式，因此本表不宣称这些定义完全一致。
+11.58 是 15.06 与 3.48 的**百分点差**，不自动等于模型的因果收益贡献。结果文件另存重叠年度加权收益的
+均值与 Σ/12 诊断口径，和实际月度 NAV 分开；两者差异不能靠改变年化标签消除。
+
+![按 PDF 前22页重建的预测和实际投资对照](assets/peer_reference.png)
+
+**目前能够成立的结论。** 与 PDF 相同名称的方法链已进一步对齐，但其 R² 与高夏普数字仍未数值重现。
+CP15 的年预测在本数据上有正的点估计，复杂模型及额外执行校准并不保证更高投资收益；
+本节保留与此前 EW3 不同的策略研究，不因这次新名称或某个 ME 版本的测试排名替换既有候选。
+82 个候选的精确清单、SPF 分歧定义、原始因子数据和执行公式是仍需原代码才能消除的差异。
+联合 max-t/全表 Holm 与配对月 CER 区间保存在结果目录，均条件于已保存预测，并未校正此前全部研究搜索。
+
+来源：[SPF 原始个体数据与说明](https://www.philadelphiafed.org/surveys-and-data/real-time-data-research/individual-forecasts)、
+[SPF 发布日历](https://www.philadelphiafed.org/-/media/FRBP/Assets/Surveys-And-Data/survey-of-professional-forecasters/spf-release-dates.txt)、
+[Eriksen 原文](https://doi.org/10.1017/S0022109017000369)、[Feunou–Fontaine 原文](https://doi.org/10.1287/mnsc.2016.2602)。
+GSW、FRED-MD、核心 CPI、EPU、RF 沿用本仓库数据来源；原始 PDF、调查 Excel 和所有中间结果均不上传。
+
+```bash
+python scripts/fetch_peer_inputs.py
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python scripts/rebuild_peer_reference.py
+python scripts/export_peer_reference.py --update-readme
+```
+
+本轮实际审计通过：3,744 条预测、288 个外层拟合、1,008 笔账户记录，
+128 个预测候选和 256 个执行候选。参数、内折截止日、筛选 t 值、源文件 SHA 和未披露设定映射保存在 `output/peer_reference/`。
+<!-- PEER_REFERENCE:END -->
 
 ## 6. 已修复的问题与仍然存在的边界
 
@@ -1309,7 +1429,7 @@ python scripts/export_completed_tuning.py --update-readme
 
 ## 7. 数据来源与准备
 
-仓库只发布代码、README、依赖声明与结果图片；原始数据、文献、笔记、虚拟环境、uv 锁文件和本地忽略规则均不上传。以下公开页面已于 **2026-10-21** 核对。数据源的最新版本可能与本项目保存的历史文件不同。
+仓库只发布代码、README、依赖声明与结果图片；原始数据、文献、笔记、虚拟环境、uv 锁文件和本地忽略规则均不上传。既有来源于 **2026-10-21** 核对；新增 SPF 与 EPU 页面于 **2026-10-23** 核对。数据源的最新版本可能与本项目保存的历史文件不同。
 
 | 本地文件 | 使用方式 / 必要格式 | 来源与可核验范围 |
 | --- | --- | --- |
@@ -1324,6 +1444,9 @@ python scripts/export_completed_tuning.py --update-readme
 | `RFS2009.xls` | §5.5 必需；作者原始八 PC、CP/LN 指数及实现月份年度收益，仅作描述复现，不进入 OOS | [作者原始文件](https://www.sydneyludvigson.com/s/RFS2009.xls)及 [数据说明页](https://www.sydneyludvigson.com/data-and-appendixes) |
 | `LN_handbook_replication.zip` | §5.5 必需；读取作者 MATLAB 原始宏观矩阵、变换码和参考 PC，保留 ZIP 原结构 | [作者复现包](https://www.sydneyludvigson.com/s/DataReplicationFiles.zip)，Handbook 2007 版本，区别于 RFS2009 的 132 序列版本 |
 | `CPILFESL.csv` | CP15 核心 CPI，日期列及 `CPILFESL` 水平列；当前修订版本，不能当作严格实时输入 | [FRED 官方核心 CPI](https://fred.stlouisfed.org/series/CPILFESL)，抓取区间 1957-01–2026-04；保留 2025-10 缺失，不用未来值回填 |
+| `SPFmicrodata.xlsx` | §5.8 六种经济变量、个体 nowcast 与未来四季水平；构造个体变化的中位数及 IQR 两个版本 | [费城联储个体预测数据](https://www.philadelphiafed.org/surveys-and-data/real-time-data-research/individual-forecasts)，当前档案含历史勘误可能；不冒充最初发布文件 |
+| `spf_release_dates.txt` | SPF 实际发布时间，按月末 as-of 对齐；包括 1996Q1、2019Q1 延迟发布 | [费城联储发布日历](https://www.philadelphiafed.org/-/media/FRBP/Assets/Surveys-And-Data/survey-of-professional-forecasters/spf-release-dates.txt) |
+| `US_Policy_Uncertainty_Data.xlsx` | §5.8 明确模板池中的新闻型美国 EPU，取对数并滞后两月 | [Baker–Bloom–Davis 的 EPU 页面](https://www.policyuncertainty.com/us_monthly.html)及[官方工作簿](https://www.policyuncertainty.com/media/US_Policy_Uncertainty_Data.xlsx)；来源要求署名，历史数据可能修订 |
 
 默认将文件放入项目根目录下的 `GroupProjectData/`，也可用环境变量 `BOND_RP_DATA_DIR` 指定自己的数据目录。文献数值校验使用 FB、作者文件、GSW、RF 和核心 CPI；`scripts/fetch_literature_inputs.py` 可补齐公开作者文件与核心 CPI，保留已有文件。CRSP/课程输入仍须自行准备，不能保证公开下载同版本价格。
 
@@ -1346,6 +1469,11 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python scripts/validate_and_extend.py -
 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python scripts/complete_tuning.py
 python scripts/audit_completed_tuning.py
 python scripts/export_completed_tuning.py --update-readme
+
+# 按新 PDF 前22页重建对应基线；未披露细节作为显式假设保存
+python scripts/fetch_peer_inputs.py
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python scripts/rebuild_peer_reference.py
+python scripts/export_peer_reference.py --update-readme
 
 # 数据时点、未来数据扰动、费用恒等式与风险指标的回归测试
 python -m unittest discover -s tests -v
@@ -1418,6 +1546,11 @@ bond_rp/
   tuning_search.py          两种子、固定预算、确定性反馈的 Optuna 搜索
   allocation_calibration.py  独立晚段验证的信号强度/偏差校准与现金账户
   tuning_evaluation.py       公平 EH 校准、压力检验及配对效用区间
+  ms17.py                    Feunou–Fontaine 递归预测因子的联合非线性估计
+  survey_expectations.py     SPF 个体预期/分歧、实际发布日与月度可得性
+  peer_reference.py          PDF 对应的10文献＋5模板PC；固定初筛与折内重建
+  peer_learners.py           动态EN嵌套时间验证、训练内Copula、深度2/100树
+  peer_allocation.py         年度信号逐期限配置、月度真实价格账户与显式惩罚
 scripts/
   run_analysis.py            修正后的完整研究入口
   export_readme_results.py   带缓存和审计记录的报告生成
@@ -1435,6 +1568,9 @@ scripts/
   audit_completed_tuning.py  实际输出、时点、768 trial 和现金流独立审计
   audit_tuning_solver.py     获胜 EN 默认/更高精度求解器独立复查
   export_completed_tuning.py 从审计后的结果生成本轮表格和图片
+  fetch_peer_inputs.py       下载并验证官方SPF/EPU输入，保留已有版本
+  rebuild_peer_reference.py  对应PDF前22页的完整验证段、双ME定义与执行校准
+  export_peer_reference.py   源指纹/截止日/账户审计、PPT数字对照与结果图
 code/
   replicate_papers.py        文献样本内公式对照
   strategy_analysis.py       转入统一入口的兼容命令

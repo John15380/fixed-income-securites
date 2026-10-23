@@ -128,6 +128,11 @@ def peer_fold(bonds, features, survey, candidates, selected, date, predict_dates
     prediction = {"EH": refs["EH"]}
     for name, (a, b) in blocks.items():
         prediction[name] = LinearRegression().fit(a, y).predict(b)
+    # Preserve the original maturity-loading restrictions. A blanket intercept
+    # in this reporting layer would silently turn the verified factor models
+    # into different regressions (CP05 Eq.2; Feunou-Fontaine Eqs.3-4).
+    prediction["L1_CP05"] = refs["CP05"]
+    prediction["L1_MS17"] = factors[history.index.get_indexer(prediction_dates), None]*ms.loadings_
     prediction["L1_FB"] = np.column_stack([LinearRegression().fit(X[:, [j]], y[:, j]).predict(x[:, [j]])
                                             for j in range(4)])
     full, point = blocks["L2_Incr"]

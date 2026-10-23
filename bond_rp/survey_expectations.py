@@ -10,7 +10,29 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-SPF_SERIES = ("RGDP", "PGDP", "UNEMP", "CPROF", "INDPROD", "HOUSING")
+# Eriksen Table 1's GDP means (1.53, 3.13, 4.76, 6.44) identify
+# NOMINAL GDP. RGDP is a different predictor, despite its availability in SPF.
+SPF_SERIES = ("NGDP", "PGDP", "UNEMP", "CPROF", "INDPROD", "HOUSING")
+
+
+def respondent_changes(frame, name):
+    """Paper section III: changes from each respondent's own nowcast.
+
+    Log changes are in percent. Housing is a level change multiplied by 100,
+    matching the display units of Table 1 (SPF levels are in millions).
+    This rescaling cancels in training-standardized PCA, but makes the raw
+    descriptive statistics directly comparable to the paper's table.
+    """
+    f = frame.replace(-999, np.nan)
+    now = pd.to_numeric(f[name+"2"], errors="coerce")
+    result = {}
+    for h in range(1, 5):
+        future = pd.to_numeric(f[name+str(h+2)], errors="coerce")
+        result[f"{name}_h{h}"] = (100*(future-now) if name == "HOUSING" else
+            100*np.log(future.where(future > 0)/now.where(now > 0)))
+    result = pd.DataFrame(result, index=f.index)
+    result.index = pd.PeriodIndex(f.YEAR.astype(int).astype(str)+"Q"+f.QUARTER.astype(int).astype(str), freq="Q")
+    return result
 
 
 def release_dates(path):
@@ -29,18 +51,7 @@ def release_dates(path):
 
 def respondent_expectations(frame, name):
     """Median of individual log(future/own nowcast), not log(median levels)."""
-    f = frame.replace(-999, np.nan).copy()
-    q = pd.PeriodIndex(f.YEAR.astype(int).astype(str)+"Q"+f.QUARTER.astype(int).astype(str), freq="Q")
-    now = pd.to_numeric(f[name+"2"], errors="coerce")
-    transformed = {}
-    for h in range(1, 5):
-        future = pd.to_numeric(f[name+str(h+2)], errors="coerce")
-        if name == "HOUSING":
-            values = future-now
-        else:
-            values = 100*np.log(future.where(future > 0)/now.where(now > 0))
-        transformed[f"{name}_h{h}"] = pd.Series(values.to_numpy(), index=q).groupby(level=0).median()
-    return pd.DataFrame(transformed)
+    return respondent_changes(frame, name).groupby(level=0).median()
 
 
 def load_spf(directory, dates):
@@ -59,16 +70,8 @@ def load_spf(directory, dates):
     # IQR of individual log growth/change, distinct from original median ME.
     dispersion = []
     for name in SPF_SERIES:
-        f = pd.read_excel(xls, name).replace(-999, np.nan)
-        q = pd.PeriodIndex(f.YEAR.astype(int).astype(str)+"Q"+f.QUARTER.astype(int).astype(str), freq="Q")
-        now = pd.to_numeric(f[name+"2"], errors="coerce")
-        block = {}
-        for h in range(1, 5):
-            future = pd.to_numeric(f[name+str(h+2)], errors="coerce")
-            value = future-now if name == "HOUSING" else 100*np.log(future.where(future > 0)/now.where(now > 0))
-            grouped = pd.Series(value.to_numpy(), index=q).groupby(level=0)
-            block[f"{name}_h{h}"] = grouped.quantile(.75)-grouped.quantile(.25)
-        dispersion.append(pd.DataFrame(block))
+        grouped = respondent_changes(pd.read_excel(xls, name), name).groupby(level=0)
+        dispersion.append(grouped.quantile(.75)-grouped.quantile(.25))
     dispersion = pd.concat(dispersion, axis=1)
     def align(panel):
         available = panel.loc[panel.index.isin(releases)].copy()

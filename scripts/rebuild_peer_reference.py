@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 from bond_rp.config import DATA_DIR
 from bond_rp.data import load_macro_raw_transformed
+from bond_rp.literature_audit import survey_paper_audit
 from bond_rp.peer_allocation import allocation_path, risk_panel, summarize
 from bond_rp.peer_learners import elastic_predict, xgb_predict
 from bond_rp.peer_reference import candidate_menu, screen_candidates, peer_fold, BASE_NAMES
@@ -35,11 +36,12 @@ PROTOCOL = dict(train_start="1994-01", screening_end="2009-12", validation_start
     cases=["dispersion", "expectations"], main_case="dispersion",
     target="annual log excess return, with actual monthly simple-return NAV",
     date_convention="formation dates; annual test outcomes finish 2023-12, monthly NAV 2023-01",
+    factor_revision="Eriksen Table1 identifies nominal NGDP, not RGDP; housing display units x100",
     status="reconstruction of disclosed design; not an exact numerical reproduction; all test history already seen")
 
 ASSUMPTIONS = [
     dict(pages="3,13", item="ME", disclosed="SPF forecaster disagreement; attributed to Eriksen (2017)",
-         implementation="Primary: IQR of respondent growth forecasts, PCA3 and supervised index. Separate original-paper median-expectation panel.",
+         implementation="Nominal GDP (NGDP), PGDP, UNEMP, CPROF, INDPROD, HOUSING; own-nowcast 1-4q changes. Primary IQR proxy and separate original-paper median expectation PCA3/index.",
          limitation="Slides and cited paper use different definitions; neither exact peer variable list nor aggregation is disclosed."),
     dict(pages="4,5", item="82 candidates", disclosed="about 20 series, transformation templates, cutoff |t|>2.5",
          implementation="Explicit 20-source x4-template +2-curve menu; standard OLS t-screen ending 2009-12; HAC t also saved.",
@@ -66,7 +68,7 @@ def versions():
 
 def source_hashes():
     names = ["data", "models", "coursework", "validated_models", "trading", "ms17",
-             "survey_expectations", "peer_reference", "peer_learners", "peer_allocation"]
+             "survey_expectations", "literature_audit", "peer_reference", "peer_learners", "peer_allocation"]
     files = [ROOT/"bond_rp"/(n+".py") for n in names]+[Path(__file__)]
     files += [Path(DATA_DIR)/n for n in ("GSW_yields.csv", "2026-04-MD.csv", "CPILFESL.csv",
         "SPFmicrodata.xlsx", "spf_release_dates.txt", "US_Policy_Uncertainty_Data.xlsx", "F-F_Research_Data_Factors_CSV.zip")]
@@ -245,6 +247,10 @@ def main():
     parser.add_argument("--evaluate-only", action="store_true")
     args = parser.parse_args(); args.output_dir.mkdir(parents=True, exist_ok=True)
     _, checks, _, _ = run_replication(); print(f"Prerequisite {len(checks)} paper checks passed", flush=True)
+    survey_table, evidence = survey_paper_audit()
+    survey_table.to_csv(args.output_dir/"survey_paper_table1.csv",index=False)
+    (args.output_dir/"survey_paper_evidence.json").write_text(json.dumps(evidence,indent=2))
+    print("SPF Table1 GDP identification:",evidence["mean_rmse"],flush=True)
     (args.output_dir/"protocol.json").write_text(json.dumps(PROTOCOL, indent=2))
     (args.output_dir/"reference_assumptions.json").write_text(json.dumps(ASSUMPTIONS, indent=2))
     data = inputs()

@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from bond_rp.ms17 import MS17Regression, recursive_factor
 from bond_rp.peer_allocation import allocation_path, diagonal_allocation, risk_panel
-from bond_rp.survey_expectations import respondent_expectations, release_dates
+from bond_rp.survey_expectations import SPF_SERIES, respondent_changes, respondent_expectations, release_dates
 
 
 class PeerReferenceTests(unittest.TestCase):
@@ -44,7 +44,16 @@ class PeerReferenceTests(unittest.TestCase):
         self.assertNotAlmostEqual(result.iloc[0,0],100*np.log(11/10))
         h=f.rename(columns={c:c.replace("RGDP","HOUSING") for c in f})
         h.loc[0,"HOUSING3"]=-999
-        self.assertAlmostEqual(respondent_expectations(h,"HOUSING").iloc[0,0],15.5)
+        self.assertAlmostEqual(respondent_expectations(h,"HOUSING").iloc[0,0],1550.)
+
+    def test_eriksen_uses_nominal_gdp_and_the_same_respondent_for_each_horizon(self):
+        self.assertEqual(SPF_SERIES, ("NGDP", "PGDP", "UNEMP", "CPROF", "INDPROD", "HOUSING"))
+        f = pd.DataFrame(dict(YEAR=[2010,2010], QUARTER=[1,1], NGDP2=[100.,200.]))
+        for h in range(1,5):
+            f[f"NGDP{h+2}"] = [100*np.exp(.01*h),200*np.exp(.02*h)]
+        actual = respondent_changes(f,"NGDP")
+        np.testing.assert_allclose(actual, [[1,2,3,4],[2,4,6,8]], atol=1e-12)
+        np.testing.assert_allclose(respondent_expectations(f,"NGDP"), [[1.5,3,4.5,6]], atol=1e-12)
 
     def test_actual_spf_release_calendar_has_delayed_2019q1(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -94,6 +103,16 @@ class PeerReferenceTests(unittest.TestCase):
         survey["release_date"]=(survey.index-1).to_timestamp()
         candidates=pd.DataFrame(rng.normal(size=(len(bonds),8)),index=bonds.index,columns=[f"c{j}" for j in range(8)])
         before=peer_fold(bonds,make_features(bonds,macro,cpi),survey,candidates,list(candidates),date)
+        # Independent CP05 Eq.2: the second stage has loadings but no new
+        # intercept, even in the reference model's final reporting wrapper.
+        y=before["y"]
+        f=bonds.loc[before["train_dates"],[f"f{n}" for n in range(1,6)]].to_numpy()
+        design=np.column_stack([np.ones(len(f)),f])
+        coefficient=np.linalg.lstsq(design,y.mean(1),rcond=None)[0]
+        index=design@coefficient
+        loading=(index@y)/(index@index)
+        now=np.r_[1.,bonds.loc[date,[f"f{n}" for n in range(1,6)]].to_numpy()]
+        np.testing.assert_allclose(before["reference"]["L1_CP05"],(now@coefficient*loading)[None,:],atol=1e-10)
         changed=bonds.copy();targets=[c for c in bonds if c.startswith(("rx","long_rx"))]
         changed.loc[changed.index+12>=date,targets]+=1e6
         m=macro.copy();m.loc[m.index>date-2]+=1e6

@@ -4,7 +4,7 @@
 
 **先验证文献，再扩展模型。** [原论文数值校验](#literature-replication) 对照作者数据、实际 PDF 原表和独立回归，验证 FB、CP、LN 及 CP15 的构造；CP15 的 GSW 数据适配、历史远期利率、ElasticNet、XGBoost、Gaussian Copula 和验证期调参见 [新增实验](#validated-extension)与[完成后的扩参研究](#completed-tuning)。原作者全样本因子仅用于描述复现，样本外全部重新构造。
 
-**新增 PDF 对应基线。** [§5.8](#peer-reference) 按前 22 页恢复完整验证段、15 个输入、MS 递归因子、SPF、深度 2/100 树 XGBoost，以及按期限配置的滚动 MV 基准。PPT 的“ME 分歧”和 Eriksen 原文“ME 预期”并列运行，零费校准后 CAGR 为 0.94%/1.30%；对方高夏普尚未数值复现。原 82 个候选清单和执行公式未披露，采用的假设逐页标明，不能称为同代码、同数据的原样复现。
+**新增 PDF 对应基线。** [§5.8](#peer-reference) 按前 22 页恢复完整验证段、15 个输入、MS 递归因子、SPF、深度 2/100 树 XGBoost，以及按期限配置的滚动 MV 基准。按[读本原文核查](#factor-origins)修正 ME 为名义 GDP 后，PPT 分歧代理与 Eriksen 预期定义的零费校准 CAGR 为 1.05%/1.14%；对方高夏普尚未数值复现。原 82 个候选清单和执行公式未披露，采用的假设逐页标明，不能称为同代码、同数据的原样复现。
 
 **上一轮独立扩参结果。** 四组独立实验共运行 768 个候选，分开早段模型选择与晚段投资校准；41 项文献数值检查、75 项当轮回归测试，以及 17,325 条预测和 14,445 笔交易的独立审计通过。历史版本面板在 2017-02–2022-12 的新选中月度策略，校准后扣费 CAGR 0.91%、超额夏普 −0.09；同期 EW3 为 1.52%/0.22，被动为 0.43%/−0.24。该轮扩大调参未超过既有 EW3，完整失败对照、参数边界与效用区间见 §5.7；保留下面的 EW3 历史候选。
 
@@ -35,6 +35,7 @@
 | 验证期选择与非线性扩展（§5.6） | CP15、平滑远期利率、EN/XGBoost、Copula 增强；2017 年冻结超参数与收缩 | 原始与校准预测、真实与合成训练、修订与历史版本、主期与后续期全部保留 |
 | 完成扩参与独立投资校准（§5.7） | 两种子、三表示、三窗口、768 个候选；独立晚段 81 点信号校准 | 同时校准 EH，版本对照继承参数；新增方法未超过既有 EW3，搜索和收益局限完整保留 |
 | 新增 PDF 对应基线（§5.8） | 前22页来源映射、10＋5输入、原文MS、两种SPF定义、完整验证段与逐期限配置 | 明确区分已披露设定与重建假设；实际月度净值、预测误差和PPT年化口径分别报告 |
+| 读本因子追溯（§5.9） | 18项因子/方法出处、Eriksen原表24项统计、修正NGDP输入并控制旧参数比较 | 原始规格、代理与尚缺数据分列；纠正定义不保证测试收益提高 |
 
 基础报告保留 CP、LN、BW 与 GBM_raw 的等权预测作为比较规格；其固定权重是在修正研究时制定。不同目标与交易频率的结果分别报告，不以事后排名替代选择依据。
 
@@ -1308,6 +1309,9 @@ python scripts/export_completed_tuning.py --update-readme
 本次通过联合非线性最小二乘估计 α、γ、b，约束平均 b=1；R0 取成熟训练均值，保留隔离期内可观察的每个月远期利率。
 α=0.6284 是原文年预测样本的估计结果，不当作未来样本已知参数；此前固定 EMA 半衰期不是这项复现。
 
+参考层的 CP05 与 MS 直接保留原文无额外截距的期限载荷，不再经统一含截距回归改写。
+这项修正只影响具名基准预测；复杂模型的15列输入保持不变。
+
 **ME 的原文与 PPT 存在定义差异。** Eriksen(2017) §III 使用 GDP、GDP 平减指数、失业率、税后利润、
 工业生产与房屋开工的个体调查预期：每位受访者相对其自身 nowcast 计算未来 1–4 季变化，再取中位数，
 对 24 个序列提取前三 PC 并拟合共同收益指数。PPT 称之为预测分歧；本次并列运行上述原文定义，
@@ -1329,32 +1333,38 @@ $w_n\propto\max(\hat\mu_n,0)/(\gamma\hat\sigma_n^2)$，均值和方差口径均�
 | 模型 | PDF 平均逐期限 R² (%) | 本次：分歧 ME | 本次：预期 ME |
 | --- | --- | --- | --- |
 | L1_FB | -8.03 | -0.30 | -0.30 |
-| L1_CP05 | 2.42 | 8.24 | 8.24 |
-| L1_MS17 | 3.48 | -45.61 | -45.61 |
+| L1_CP05 | 2.42 | 8.46 | 8.46 |
+| L1_MS17 | 3.48 | -46.31 | -46.31 |
 | L1_CP15 | 13.03 | 17.95 | 17.95 |
-| L1_Macro | 9.20 | -98842.98 | -174297.38 |
-| L1_Full | 15.10 | -439391.33 | -589939.71 |
+| L1_Macro | 9.20 | -92936.05 | -160225.38 |
+| L1_Full | 15.10 | -411137.44 | -617989.09 |
 | L2_PCA | 3.00 | -15.34 | -15.34 |
-| L2_Incr | -19.90 | -168733.58 | -191743.81 |
-| L3_Real | 4.10 | -139225.58 | -201012.06 |
-| L3_GC | 26.15 | -216080.44 | -316821.14 |
-| L4_Real | 24.25 | 2.22 | 5.12 |
-| L4_GC | 31.77 | 3.30 | -3.77 |
+| L2_Incr | -19.90 | -159222.04 | -188090.09 |
+| L3_Real | 4.10 | -135802.23 | -203728.96 |
+| L3_GC | 26.15 | -205476.98 | -274050.82 |
+| L4_Real | 24.25 | -3.04 | -0.00 |
+| L4_GC | 31.77 | -0.23 | 3.93 |
 
 本模板池实际筛出 17 列，首次训练 PC1–5 解释 89.29% 方差；
 PDF 报告 93.0%。这项可观察差异直接说明候选池尚未逐列匹配，不应把新增实验包装为原始输入的复现。
 SPF 原文采用季度频率，这里按实际发布日保持到月末，是月度适配；初筛变量集合固定于 2009 年，内层 EN 验证条件于该初始变量集合。
 
+**ME 原文核对修正。** Eriksen 提供 PDF 第79页 Table1 的 GDP 一至四季预期均值为 1.53、3.13、4.76、6.44。
+SPF 的 NGDP 可对应这些数字；先前使用 RGDP 属于因子定义错误，已改为名义 GDP，并用24项原始统计核查。
+住宅开工水平变化按原表乘100；这是单位换算，不影响标准化 PCA。原文 ME 是预期中位数，不是分歧；
+PPT 分歧版本继续作为单列代理。原始统计及归因依据保存在 `survey_paper_table1.csv` 和 `survey_paper_evidence.json`，
+不能将当前调查档案中的剩余修订差异包装成原始版本的逐格精确复现。
+
 | ME 定义 | 模型 | 完整验证段可兑现标签的平均 R² (%) | 测试平均 R² (%) |
 | --- | --- | --- | --- |
-| PPT 分歧定义 | L3_Real | 34.82 | -139225.58 |
-| PPT 分歧定义 | L3_GC | 28.12 | -216080.44 |
-| PPT 分歧定义 | L4_Real | 45.45 | 2.22 |
-| PPT 分歧定义 | L4_GC | 51.15 | 3.30 |
-| Eriksen 预期定义 | L3_Real | 33.96 | -201012.06 |
-| Eriksen 预期定义 | L3_GC | 20.74 | -316821.14 |
-| Eriksen 预期定义 | L4_Real | 41.20 | 5.12 |
-| Eriksen 预期定义 | L4_GC | 41.70 | -3.77 |
+| PPT 分歧定义 | L3_Real | 36.13 | -135802.23 |
+| PPT 分歧定义 | L3_GC | 32.72 | -205476.98 |
+| PPT 分歧定义 | L4_Real | 41.53 | -3.04 |
+| PPT 分歧定义 | L4_GC | 53.50 | -0.23 |
+| Eriksen 预期定义 | L3_Real | 33.93 | -203728.96 |
+| Eriksen 预期定义 | L3_GC | 17.31 | -274050.82 |
+| Eriksen 预期定义 | L4_Real | 39.93 | -0.00 |
+| Eriksen 预期定义 | L4_GC | 49.37 | 3.93 |
 
 上表按四期限 R² 的均值对应 PDF 图表；篮子 R² 另存，二者不混用。原始 LN 组合在疫情宏观极值上的外推，
 使线性组合/EN 出现极大负 R²；保留该失败结果，没有为匹配 PPT 的正值自行加截断。
@@ -1364,14 +1374,14 @@ SPF 原文采用季度频率，这里按实际发布日保持到月末，是月�
 | --- | --- | --- | --- | --- | --- |
 | PPT 分歧定义 | RollingMV/direct | 0.63 | -0.45 | -0.12 | -13.25 |
 | PPT 分歧定义 | L1_CP15/direct | 1.21 | 0.06 | 0.07 | -1.05 |
-| PPT 分歧定义 | L4_Real/direct | 0.87 | -0.24 | -0.09 | -9.43 |
-| PPT 分歧定义 | L4_GC/direct | 0.75 | -0.37 | -0.15 | -8.75 |
-| PPT 分歧定义 | L4_GC/optimized | 0.94 | -0.19 | -0.10 | -6.46 |
+| PPT 分歧定义 | L4_Real/direct | 0.37 | -0.74 | -0.25 | -12.18 |
+| PPT 分歧定义 | L4_GC/direct | 0.81 | -0.29 | -0.11 | -11.01 |
+| PPT 分歧定义 | L4_GC/optimized | 1.05 | -0.07 | -0.03 | -8.38 |
 | Eriksen 预期定义 | RollingMV/direct | 0.63 | -0.45 | -0.12 | -13.25 |
 | Eriksen 预期定义 | L1_CP15/direct | 1.21 | 0.06 | 0.07 | -1.05 |
-| Eriksen 预期定义 | L4_Real/direct | 0.94 | -0.18 | -0.08 | -9.22 |
-| Eriksen 预期定义 | L4_GC/direct | 1.16 | 0.03 | 0.02 | -6.83 |
-| Eriksen 预期定义 | L4_GC/optimized | 1.30 | 0.16 | 0.10 | -5.02 |
+| Eriksen 预期定义 | L4_Real/direct | 0.96 | -0.16 | -0.07 | -8.95 |
+| Eriksen 预期定义 | L4_GC/direct | 1.19 | 0.05 | 0.03 | -7.08 |
+| Eriksen 预期定义 | L4_GC/optimized | 1.14 | -0.00 | -0.00 | -5.53 |
 
 **收益口径核对。** PDF 第 20 页的 2.51%=15.06%÷6、2.08%≈12.50%÷6、0.58%=3.48%÷6，
 符合累计数除以六的算术口径，不能直接叫 CAGR。若 15.06% 是六年复利总收益，对应 CAGR 应约 2.37%。
@@ -1402,6 +1412,93 @@ python scripts/export_peer_reference.py --update-readme
 128 个预测候选和 256 个执行候选。参数、内折截止日、筛选 t 值、源文件 SHA 和未披露设定映射保存在 `output/peer_reference/`。
 <!-- PEER_REFERENCE:END -->
 
+<!-- FACTOR_ORIGINS:START -->
+<a id="factor-origins"></a>
+### 5.9 从 GroupProjectReading 原文追溯因子与输入修正
+
+本轮从课程必做 FB/CP/LN 出发，核对具名扩展的原始公式与实际代码入口。
+下表区分已实现的文献规格、数据适配和尚未接入的原文输入；同名或经济动机相似不等于数值复现。
+
+| 因子 | 读本中的原文依据 | 实现与边界 |
+| --- | --- | --- |
+| FB | !Fama and Bliss 1987.pdf；forward spread f(n)-y(1) | bond_rp/data.py; coursework.py；逐期限原规格；1987数据版本差异保留 |
+| CP05 | !Cochrane and Piazzesi 2005.pdf；Eqs.1-2; mean(rx) on five forwards; restricted maturity loading | bond_rp/coursework.py:common_index；共同指数及第二阶段已核对 |
+| LN5/LN6 | !Ludvigson and Ng 2009.pdf；Eqs.7-8; F1,F1^3,F2,F3,F4,F8; LN5 drops F2 | bond_rp/coursework.py; peer_reference.py；现代宏观面板是适配；COVID三次项外推失败仍保留 |
+| MS recursive | MS2017-bond-risk-premia-and-gaussian-term-structure-models.pdf；Section2.2 Eqs.3-4; R=(1-alpha)*gamma*f+alpha*lag(R) | bond_rp/ms17.py；联合估计递归系数，不把原样本alpha或固定EMA当作样本外估计 |
+| ME | JFQA2017 Expected Business Conditions and Bond Risk Premia.pdf；SectionIII; Table1; Eqs.6-7; NGDP,PGDP,UNEMP,CPROF,INDPROD,HOUSING x 4 horizons | bond_rp/survey_expectations.py; peer_reference.py；已修正RGDP为NGDP；原文中位数预期与PPT分歧代理分列 |
+| CP15 | RFS2015 Expected Returns in Treasury Bonds.pdf；Eqs.19-21,25,27; core CPI DMA .987/120; yield cycles; duration-scaled 2-20y target | bond_rp/validated_models.py；原文CMT换为GSW；原文CPI滞后1月，主实验滞后2月 |
+| Goh48 | Goh et al 2013.pdf；SectionII.A Eqs.1-2; n=2..5, short=3/6/9, long=18/24/30/36; SectionII.C recursive BIC | bond_rp/refinement.py:goh_signals,goh_predict；48个远期利差交叉已实现；原文另有15个OBV信号，尚缺对应成交量数据 |
+| BW3 | Laborda and Olmo 2014 .pdf；Eq.14; SENT_ORTH, square, first difference -> common fitted index | bond_rp/refinement.py:literal_sentiment；原文三项在扩展中实现；早期SENT两项是简化代理；历史ORTH版本未取得 |
+| sPCA | Are Bond Returns Predictable with Real-Time Macro Data.pdf；Section3.2; return-slope scaling then first PC | bond_rp/refinement.py:spca_predict；方法已实现；使用成熟训练标签，不用全样本缩放权重 |
+| Policy uncertainty | RF2022 Economic Policy Uncertainty and the Yield Curve.pdf；Sections4.1-4.2; distinct GPU/MPU weighted components, IP/CPI year-on-year log growth | peer_reference.py:candidate_menu uses aggregate EPU proxy；总EPU不等于原文GPU/MPU；不能把EPU模板称为该论文因子复现 |
+| Inflation disagreement | RFS2017 Inflation Bets on the Long Bond.pdf；Michigan inflation forecast IQR and debt-supply interaction | 未接入原始Michigan IQR及供给交互；SPF六变量分歧不是本论文的原始因子，也不是Eriksen ME |
+| Macro uncertainty | AER2015 measuring uncertainty.pdf；Conditional volatility of unforecastable macro components | 尚未接入原始不确定性序列；宏观水平的PCA、VIX或普通滚动波动率均不能冒称JLN uncertainty |
+| Stock illiquidity | Bouwman, Sojli, and Tham 2013.pdf；Amihud cross-stock aggregate and large/small-cap liquidity difference | 尚未接入逐股收益/成交金额；不是把TED或BAA利差直接改名为原文流动性因子 |
+| VRP | Zhou 2012.pdf；Section2 Eqs.1-3; VIX^2/12 minus a time-t forecast of future realized variance | 尚未接入高频已实现方差；不能直接扣除尚未发生的未来RV；原文主体为1-6月债券，2-5年为适配 |
+| Debt supply | RFS2014 Bond Supply and Excess Bond Returns.pdf；Maturity-weighted government debt/GDP | 尚未接入逐期限存量及历史GDP版本；总债务/GDP不能直接替代久期结构 |
+| Bank demand | JF2020 The banking view of bond risk premium.pdf；Bank interest-rate exposure and bond risk premia | 尚未接入银行持仓/资产负债表；不能用单一宏观利差宣称完整复现银行需求机制 |
+| Fiscal policy | JFE2020 Fiscal Policy Driven Bond Risk Premia.pdf；Government spending level and volatility | 尚未接入该文支出及冲击模型；一般EPU不是财政支出波动冲击 |
+| Global macro | MS2021-unspanned-global-macro-risks-in-bond-returns.pdf；Global macro risks outside the yield span | 尚未接入跨国宏观及债券面板；美国FRED面板不等于全球因子 |
+
+**本轮发现并修正了实际错误。** Eriksen 的 GDP 应使用 SPF **NGDP（名义 GDP）**，先前误用了 RGDP。
+识别依据是原文 Table1 的四个预期增长均值，完全不依赖策略收益；不是为了改善测试结果换变量。
+
+| GDP 口径 | 一季 | 二季 | 三季 | 四季 | 相对原表的均值 RMSE（百分点） |
+| --- | --- | --- | --- | --- | --- |
+| 论文 Table1 | 1.53 | 3.13 | 4.76 | 6.44 | — |
+| NGDP | 1.5266 | 3.1253 | 4.7586 | 6.4403 | 0.0030 |
+| RGDP | 0.6479 | 1.3555 | 2.1328 | 2.9363 | 2.4034 |
+
+统计区间为 1968Q4–2014Q4；完整24项均值/标准差另存。住宅开工变化按原表单位乘100，
+这种固定单位换算在标准化 PCA 中抵消。最新调查档案仍存在部分历史数值差异，
+24项完整季度行共 180 个；前三 PC 方差占比为 48.92%/27.93%/14.99%，原表约53%/25%/14%。
+因此可以确认 GDP 口径错误已修正，仍不能宣称所有调查原表已精确重现。
+
+**82个候选的出处。** 参考 PPT 第4–5页将它们称为约20个宏观金融序列经固定模板和多个窗口生成的候选，
+并没有称其为某篇读本直接提供的82个既定因子。经典六类有明确原文；本项目的20×4＋2候选池仍是公开的重建假设。
+Goh48与BW3此前已在§5.4实现，不重复当作本轮新发明；PPT的SPF分歧代理既不同于Eriksen的中位数预期，
+也不等于 Hong–Sraer–Yu 的 Michigan 通胀分歧与国债供给交互。
+
+**修正前后结果。** 测试买入期2017-01–2022-12，72笔月交易、卖出至2023-01；零交易成本。
+第一项为保留的错误RGDP旧版本；第二项固定旧XGB和投资校准参数，仅修正ME输入；
+第三项沿用上一轮验证区间与相同搜索预算重新估计，不增加候选预算。
+受影响的第10列ME以外，全部外层拟合的另14列、训练日期与目标都逐项核验一致。
+
+| ME 版本 | 实验 | CAGR (%) | 超额夏普 | 最大回撤 (%) |
+| --- | --- | --- | --- | --- |
+| PPT分歧代理 | RGDP_legacy | 0.94 | -0.10 | -6.46 |
+| PPT分歧代理 | NGDP_fixed_old_parameters | 1.17 | 0.02 | -6.69 |
+| PPT分歧代理 | NGDP_same_search_budget | 1.05 | -0.03 | -8.38 |
+| Eriksen原文预期 | RGDP_legacy | 1.30 | 0.10 | -5.02 |
+| Eriksen原文预期 | NGDP_fixed_old_parameters | 1.41 | 0.17 | -4.92 |
+| Eriksen原文预期 | NGDP_same_search_budget | 1.14 | -0.00 | -5.53 |
+
+这项修正改善了因子与论文定义的一致性；收益变化不能先验保证为正。重跑仍未达到对方高夏普，
+不按GDP口径或两种ME版本的测试排名选择最终定义，也不将修正后模型替换为未经比较验证的主策略。
+文献核查并未创造未接触过的新测试集；本节是回溯审计，不能称为新的独立确认。
+
+**具名基准的第二阶段约束。** CP05与MS参考预测改为直接沿用原文期限载荷，不再统一附加截距。
+同时用MS原始六期限（2/3/4/5/7/10年）、CRSP远期利率与GSW收益重做描述性比较；
+1963-01–2003-12买入样本估计α=0.6895，原表为0.6284。
+实际逐月递推另用循环独立核算；当期档案与论文原始版本不完全一致，原表差值不作为强行通过的容差。
+
+| 期限 | 原表载荷 | 重估载荷 | 原表 R² (%) | 重估 R² (%) |
+| --- | --- | --- | --- | --- |
+| 2年 | 0.29 | 0.29 | 35.7 | 32.0 |
+| 3年 | 0.55 | 0.55 | 40.0 | 37.9 |
+| 4年 | 0.79 | 0.79 | 43.0 | 41.9 |
+| 5年 | 1.01 | 1.01 | 45.0 | 44.5 |
+| 7年 | 1.40 | 1.41 | 47.3 | 47.4 |
+| 10年 | 1.95 | 1.95 | 48.6 | 49.0 |
+
+这项MS比较是原区间的数据适配，不是2017–2022交易结果；不将其α固定带入未来回测。
+
+原文输入复核：`python scripts/audit_literature_factors.py --sources-only`。
+完整修正归因：`python scripts/audit_literature_factors.py --update-readme`，需先保留旧版运行目录
+`output/peer_reference_rgdp_legacy/`（对应提交acbdd27），再运行修正后的研究；旧输出不随仓库上传。
+原PDF和原始数据继续保留在本地；上传内容为代码、说明与已有结果图。
+<!-- FACTOR_ORIGINS:END -->
+
 ## 6. 已修复的问题与仍然存在的边界
 
 | 已修复 | 现在如何处理 |
@@ -1413,7 +1510,7 @@ python scripts/export_peer_reference.py --update-readme
 | 测试期协方差、非标准缩放和权重单位混乱 | 仅使用已兑现训练收益；标准 Ledoit–Wolf；按 NAV 权重限制总敞口 |
 | 费用只看信号权重变化 | 年度持仓逐笔计算进出本金/市值费用与现金占用 |
 | 初始亏损未计入回撤 | 净值序列显式包含初始资金 1 |
-| 情绪处理的依据不清 | 保留 SENT 水平及平方作为扩展；明确原文包含正交化、差分与共同预测指数，尚未逐项复现 |
+| 情绪处理的依据不清 | 早期 SENT 两项代理单列；§5.4 的 BW3 恢复正交化情绪、平方、差分与共同指数，历史发布版本仍缺 |
 | FB/GSW 直接拼接 | 基准和连续 GSW 独立评价，另按共同月份比较 |
 | 普通标准误和宽泛 CW 分类 | HAC，仅确认同历史嵌套模型用 CW；新增条件区块 bootstrap-t 与校正后 p 值 |
 

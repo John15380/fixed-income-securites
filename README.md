@@ -2,7 +2,9 @@
 
 一个可复现的固定收益课程研究项目：以美国 2–5 年期零息国债为对象，研究远期利差、远期利率组合与宏观因子能否在历史均值基准之外预测超额收益，并检验预测能否转化为扣费后的投资效用。
 
-**当前复现状态：尚未数值复现另一组结果。** [§5.10](#replication-diagnosis) 已补齐 L3 滞后项，定位疫情宏观三次项外推；[§5.11](#peer-preprocessing) 进一步对照完整提取 Markdown，补入验证期热力图，完成折内异常处理、256次预测参数试验及512次投资校准。仅按验证期选择的新方案，2017–2022形成月的直接配置零费 CAGR 为1.43%／1.56%、超额夏普0.13／0.21（分歧／原文预期ME）；校准后为1.36%／1.18%。年度预测平均R²仍为−0.16%／3.85%，效用区间均包含零，未达到对方结果。
+**复刻核对结论：尚未做到与另一组相同的方法，也未数值复现其结果。** [§5.12的原页—代码对照](#peer-fidelity)明确列出：82项候选为自定替代池，模板构成未匹配；2009筛选截止的日期含义未确认；GC、仓位上限及执行惩罚也有自行设定。原论文公式校验与程序测试通过，不能证明这些研究选择相同。
+
+**当前独立扩展结果。** [§5.10](#replication-diagnosis) 已补齐 L3 滞后项，定位疫情宏观三次项外推；[§5.11](#peer-preprocessing) 补入验证期热力图，完成折内异常处理、256次预测参数试验及512次投资校准。仅按验证期选择的新方案，2017–2022形成月的直接配置零费 CAGR 为1.43%／1.56%、超额夏普0.13／0.21（分歧／原文预期ME）；校准后为1.36%／1.18%。年度预测平均R²仍为−0.16%／3.85%，效用区间均包含零。这些是本项目自定方案的成绩，不代表对方策略的有效性检验。
 
 **先验证文献，再扩展模型。** [原论文数值校验](#literature-replication) 对照作者数据、实际 PDF 原表和独立回归，验证 FB、CP、LN 及 CP15 的构造；CP15 的 GSW 数据适配、历史远期利率、ElasticNet、XGBoost、Gaussian Copula 和验证期调参见 [新增实验](#validated-extension)与[完成后的扩参研究](#completed-tuning)。原作者全样本因子仅用于描述复现，样本外全部重新构造。
 
@@ -40,6 +42,7 @@
 | 读本因子追溯（§5.9） | 18项因子/方法出处、Eriksen原表24项统计、修正NGDP输入并控制旧参数比较 | 原始规格、代理与尚缺数据分列；纠正定义不保证测试收益提高 |
 | 复现差距诊断（§5.10） | 修复L3滞后遗漏；疫情输入机制、固定参数XGB、日期及配置口径的控制实验 | 明确已匹配、遗漏和自定假设；不将回溯机制实验称为另一组原样策略 |
 | 完整预处理与验证核对（§5.11） | 两种折内清洗、重建LN及模板PC、同预算重新选参；补齐验证期逐期限比较与成本复核 | 只以成熟验证标签选择清洗；投资点估计改善，预测和统计结论仍有限 |
+| 方法一致性复查（§5.12） | 20项原页—代码对照、全池/筛后模板构成、两种2009截止解释及MV约束影响 | 当前状态为NOT_REPLICATED；不以通过测试或增加试验次数替代方法一致性 |
 
 基础报告保留 CP、LN、BW 与 GBM_raw 的等权预测作为比较规格；其固定权重是在修正研究时制定。不同目标与交易频率的结果分别报告，不以事后排名替代选择依据。
 
@@ -1731,6 +1734,82 @@ python scripts/audit_peer_preprocessing.py
 前者保存全部分支及选择记录并生成图表，后者独立回放预测和现金流、补充共同成本压力与审计结果。
 <!-- END PEER_PREPROCESSING -->
 
+<!-- BEGIN PEER_FIDELITY -->
+<a id="peer-fidelity"></a>
+### 5.12 是否与对方做了一样的复刻：重新核对原页
+
+**没有。当前是带自定候选池、信息边界、GC配置和投资执行假设的方法重建及扩展，不能称为同方法复刻。**
+§5.11的清洗和重选参改善了部分结果，但没有消除这些差异；86项测试通过也不等于方法一致。
+本节重新视觉核对本地PDF第2–7、9、11–14、16–20页，并将材料未披露、日期解释未定和明确不一致分别列出。
+
+| 原页 | 项目 | 对方披露 | 当前代码 | 核对结论 |
+| --- | --- | --- | --- | --- |
+| 2 | 预测对象 | 2–5年零息国债、12个月超额收益 | 同一目标类别；价格版本及日期锚点另核；[bond_rp/validated_models.py:38](bond_rp/validated_models.py#L38) | 已核对结构 |
+| 12 | XGB树结构 | 深度2、100树 | max_depth=2、n_estimators=100；其他正则为自定搜索；[bond_rp/peer_learners.py:27](bond_rp/peer_learners.py#L27) | 已核对结构 |
+| 11–12 | L3/L4维数 | L3各变量加滞后；L4为15个同期输入 | L3为15+15、L4为15；滞后1月及列成员并非原清单确认；[bond_rp/peer_reference.py:158](bond_rp/peer_reference.py#L158) | 已核对结构 |
+| 4–5 | 候选模板分布 | 累计求和68%、排名12%、差分4%、动量4%；图示分母未注明 | 全池四模板各24.39%；筛后为64.71%/23.53%/0%/11.76%，均未匹配图示；[bond_rp/peer_reference.py:40](bond_rp/peer_reference.py#L40) | 没有复刻图示构成 |
+| 4–5 | 窗口分布 | 12月44%、6月20%、3月20%；剩余未说明 | 全池12月40/82、6月20/82、3月20/82、水平2/82；原图的统计对象待确认；[bond_rp/peer_reference.py:42](bond_rp/peer_reference.py#L42) | 没有复刻图示构成 |
+| 4–5 | 候选逐列内容 | 约20条序列生成82项；原列名/公式未给出 | 自选17个FRED序列+EPU+两曲线源，不能由82这个数证明相同；[bond_rp/peer_reference.py:21](bond_rp/peer_reference.py#L21) | 未能确认 |
+| 4–5 | 政策不确定性来源 | 来源图标示20%，分母未注明 | 直接EPU衍生4/82=4.88%；原图具体序列与统计对象未确认；[bond_rp/peer_reference.py:36](bond_rp/peer_reference.py#L36) | 没有复刻图示构成 |
+| 4–5 | 模板PC方差 | 前5PC解释93.0% | 原重建首次89.29%；须同时匹配池、样本及预处理，不强行调到93%；[bond_rp/peer_reference.py:126](bond_rp/peer_reference.py#L126) | 未能确认同口径 |
+| 6–7 | 筛选截止 | Feature screening truncated at 2009-12 | 当前按形成月截止，标签到2010-12；若是信息截止，入选17→19；[bond_rp/peer_reference.py:66](bond_rp/peer_reference.py#L66) | 日期含义未确认 |
+| 3 | LN输入面板 | 127个月度序列 | 当前FRED-MD为126列，下载版本和异常处理尚未对齐；[scripts/rebuild_peer_reference.py:83](scripts/rebuild_peer_reference.py#L83) | 明确不一致 |
+| 3 | ME因子 | SPF分歧，引用Eriksen | IQR分歧为自定代理；原文中位数预期另列，未获对方聚合公式；[bond_rp/survey_expectations.py:74](bond_rp/survey_expectations.py#L74) | 未能确认 |
+| 6–7 | 信息滞后与预处理 | 宏观滞后；PCA/缩放只在训练集拟合 | 统一滞后2月；逐月以成熟标签行重估，固定初始PCA等解释未核实；[bond_rp/peer_reference.py:93](bond_rp/peer_reference.py#L93) | 未能确认 |
+| 11–12 | GC与正则数值 | rolling Gaussian Copula、强L1/L2 | 联合X/Y经验分布、窗口60/120/全历史、比例0.5/1/2及搜索边界均自定；[bond_rp/peer_learners.py:13](bond_rp/peer_learners.py#L13) | 未能确认 |
+| 6–7 | 验证可用样本 | 验证2011–2016 | 调参使用60个已兑现年度标签；另列完整72个描述结果，尚未同口径确认；[scripts/rebuild_peer_reference.py:155](scripts/rebuild_peer_reference.py#L155) | 日期含义未确认 |
+| 2,6,20 | 测试日期 | 2017–2022，72个月，数据区间1994–2022 | 当前为形成月2017–2022，年度收益兑现至2023-12；不等于确认对方日期索引；[scripts/rebuild_peer_reference.py:39](scripts/rebuild_peer_reference.py#L39) | 日期含义未确认 |
+| 16–17 | 原始MV权重 | 逐期限正信号mu/(gamma*sigma²) | 先用该式，再加总上限1的KKT约束；约束生效时权重已改变；[bond_rp/peer_allocation.py:19](bond_rp/peer_allocation.py#L19) | 附加了自定约束 |
+| 18–19 | 风险预算B_t | 弱预期时自动压低总仓位 | 预算B*exp(lambda_dd*历史回撤)没有直接以预测强度确定B_t的步骤；仓位仍随mu变化；[bond_rp/peer_allocation.py:59](bond_rp/peer_allocation.py#L59) | 未逐项落实描述 |
+| 18–19 | 回撤惩罚 | 识别并惩罚验证期深回撤的配置倾向 | lambda_dd用作当前账户回撤刹车，验证目标仅为Sharpe；不是已确认的原目标；[scripts/rebuild_peer_reference.py:215](scripts/rebuild_peer_reference.py#L215) | 未能确认 |
+| 16–20 | 参数与执行 | 只做多、60月风险；其他细节未给 | gamma5、上限1、年度风险信号配月度真实价格账户，均为本项目约定；[bond_rp/peer_allocation.py:44](bond_rp/peer_allocation.py#L44) | 未能确认 |
+| 20 | 收益指标 | 累计超额15.06%、年化2.51%、SR1.307 | 当前主表为含现金CAGR，月度超额SR；累计超额除6并非CAGR；[bond_rp/peer_allocation.py:78](bond_rp/peer_allocation.py#L78) | 明确不是同一指标 |
+
+**候选池不是只差未知列名，已披露的模板构成也不同。** 对方图中的模板与窗口比例不是完整分布，
+不能猜补剩余部分，更不能通过平均分配模板凑出82列就称为复刻。当前数量与百分比如下：
+
+原图没有注明右侧比例统计的是82个初始候选还是筛后集合；因此本次同时统计全池和筛后，避免将不同分母直接比较。
+图示百分比都是4个百分点的倍数，与25个特征等分母相容；这是可核查线索，不能据此认定筛后就是25项，更不能反向凑25项。
+
+| 当前集合 | 模板 | 数量 | 当前占比 (%) | 对方图示该模板占比 (%) |
+| --- | --- | --- | --- | --- |
+| all_candidates（82项） | sum12 | 20 | 24.39 | 68 |
+| all_candidates（82项） | rank12 | 20 | 24.39 | 12 |
+| all_candidates（82项） | difference3 | 20 | 24.39 | 4 |
+| all_candidates（82项） | momentum6 | 20 | 24.39 | 4 |
+| all_candidates（82项） | level | 2 | 2.44 | 未说明 |
+| selected（17项） | sum12 | 11 | 64.71 | 68 |
+| selected（17项） | rank12 | 4 | 23.53 | 12 |
+| selected（17项） | difference3 | 0 | 0.00 | 4 |
+| selected（17项） | momentum6 | 2 | 11.76 | 4 |
+| selected（17项） | level | 0 | 0.00 | 未说明 |
+
+**2009截止有实际影响。** 原代码是形成月截至2009-12，标签兑现至2010-12；
+若将其解释为截至2009年底已经知道的信息，应最多纳入2008-12形成、2009-12兑现的年度收益。
+同一模板池、同一OLS阈值下，入选数从17变成19；
+移除：`RETAILx__sum12`、`RPI__sum12`；
+增加：`BAAFFM__difference3`、`BAAFFM__sum12`、`HOUST__momentum6`、`PERMIT__momentum6`。
+两种计算的全部82个t值均用独立statsmodels回归核对；这是一项截止日解释控制，不根据测试成绩选择其中一组。
+PPT未说明日期索引，尚不能据此判定对方究竟采用哪种解释，也不能说原代码已确认匹配。
+
+**权重也不能只核对公式名称。** 本项目额外的总预算1约束会改变原始逐期限MV解。在原对应重建中：
+
+| ME | 模型 | 72个月中原始MV总权重大于1的月份 | 原始MV总权重中位数 |
+| --- | --- | --- | --- |
+| dispersion | RollingMV | 69 | 18.81 |
+| dispersion | L4_GC | 62 | 36.72 |
+| expectations | RollingMV | 69 | 18.81 |
+| expectations | L4_GC | 44 | 17.84 |
+
+这些未受约束权重只用于说明附加约束影响，不作为可执行、无融资成本的策略发布。
+现有1.43%/1.56%等成绩仍是本项目设定下的结果，不能拿它们否定另一组，也不能作为其策略已复现的证据。
+接下来要建立方法一致性，需要逐项确认原始rx与日期、82项及筛后列、ME聚合、GC/正则配置和仓位/累计公式；
+文献可以约束因子的理论构造，不能唯一反推这些具体研究选择。未知项保持未知，不再以同名或更多调参替代核对。
+
+复核：`python scripts/audit_peer_fidelity.py --update-readme`。脚本输出状态为`NOT_REPLICATED`，
+不覆盖原研究，不把上述截止日控制混入现有主成绩。详情留在本地`output/peer_fidelity/`。
+<!-- END PEER_FIDELITY -->
+
 ## 6. 已修复的问题与仍然存在的边界
 
 | 已修复 | 现在如何处理 |
@@ -1903,6 +1982,7 @@ scripts/
   export_peer_reference.py   源指纹/截止日/账户审计、PPT数字对照与结果图
   complete_peer_preprocessing.py 两种清洗的完整重跑、同预算选参及双热力图对照
   audit_peer_preprocessing.py 独立回放新增预测/账户、验证选择及共同费用复核
+  audit_peer_fidelity.py     原页—代码一致性、模板构成、筛选时点及MV约束复查
 code/
   replicate_papers.py        文献样本内公式对照
   strategy_analysis.py       转入统一入口的兼容命令

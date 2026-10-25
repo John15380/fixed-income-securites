@@ -2,7 +2,7 @@
 
 一个可复现的固定收益课程研究项目：以美国 2–5 年期零息国债为对象，研究远期利差、远期利率组合与宏观因子能否在历史均值基准之外预测超额收益，并检验预测能否转化为扣费后的投资效用。
 
-**当前复现状态：尚未数值复现另一组结果。** [§5.10 的逐项诊断](#replication-diagnosis) 已补齐先前漏做的 L3 滞后项（30列，L4仍15列），定位了疫情宏观三次项外推的主导误差，并比较候选池、日期、预算与收益口径。固定参数下，按FRED-MD规则处理LN输入使预期版本L4_GC平均OOS R²由3.93%变为7.39%，仍低于对方约31.8%；不将测试通过或同名模型当成完全复现。
+**当前复现状态：尚未数值复现另一组结果。** [§5.10](#replication-diagnosis) 已补齐 L3 滞后项，定位疫情宏观三次项外推；[§5.11](#peer-preprocessing) 进一步对照完整提取 Markdown，补入验证期热力图，完成折内异常处理、256次预测参数试验及512次投资校准。仅按验证期选择的新方案，2017–2022形成月的直接配置零费 CAGR 为1.43%／1.56%、超额夏普0.13／0.21（分歧／原文预期ME）；校准后为1.36%／1.18%。年度预测平均R²仍为−0.16%／3.85%，效用区间均包含零，未达到对方结果。
 
 **先验证文献，再扩展模型。** [原论文数值校验](#literature-replication) 对照作者数据、实际 PDF 原表和独立回归，验证 FB、CP、LN 及 CP15 的构造；CP15 的 GSW 数据适配、历史远期利率、ElasticNet、XGBoost、Gaussian Copula 和验证期调参见 [新增实验](#validated-extension)与[完成后的扩参研究](#completed-tuning)。原作者全样本因子仅用于描述复现，样本外全部重新构造。
 
@@ -39,6 +39,7 @@
 | 新增 PDF 对应基线（§5.8） | 前22页来源映射、10＋5输入、原文MS、两种SPF定义、完整验证段与逐期限配置 | 明确区分已披露设定与重建假设；实际月度净值、预测误差和PPT年化口径分别报告 |
 | 读本因子追溯（§5.9） | 18项因子/方法出处、Eriksen原表24项统计、修正NGDP输入并控制旧参数比较 | 原始规格、代理与尚缺数据分列；纠正定义不保证测试收益提高 |
 | 复现差距诊断（§5.10） | 修复L3滞后遗漏；疫情输入机制、固定参数XGB、日期及配置口径的控制实验 | 明确已匹配、遗漏和自定假设；不将回溯机制实验称为另一组原样策略 |
+| 完整预处理与验证核对（§5.11） | 两种折内清洗、重建LN及模板PC、同预算重新选参；补齐验证期逐期限比较与成本复核 | 只以成熟验证标签选择清洗；投资点估计改善，预测和统计结论仍有限 |
 
 基础报告保留 CP、LN、BW 与 GBM_raw 的等权预测作为比较规格；其固定权重是在修正研究时制定。不同目标与交易频率的结果分别报告，不以事后排名替代选择依据。
 
@@ -1637,6 +1638,99 @@ L4在该日期解释下也未复现；该L4行使用2016年的买入预测而参
 未使用新的独立测试样本，所有结论均为回溯诊断；原始PDF、数据及中间输出仍不上传。
 <!-- REPLICATION_DIAGNOSIS:END -->
 
+<!-- BEGIN PEER_PREPROCESSING -->
+<a id="peer-preprocessing"></a>
+### 5.11 对照完整提取 Markdown：补齐预处理与验证期差异
+
+本轮继续依据用户提供的 PDF/Markdown 核对。原始 §5.8 重建与失败结果保留；以下是明确标记的预处理改进，
+不是对方未公开代码的精确复现。双方在疫情前的验证期也存在差异，不能只把测试差距归因于疫情或调参不足。
+
+**验证期的两种口径。** 冻结于2017年初时，2011–2015形成的60个年度标签已兑现，可用于调参；
+2011–2016全部72个预测也另外评价，以便对应PPT热力图，但其2016年标签在2017年陆续兑现，
+只作事后诊断，不参与选模。PPT未明确热力图日期指形成日还是兑现日，不能据此断言其使用了未来信息。
+
+| 模型 | PPT验证均值R² (%) | 本次60标签：预期ME | 本次72标签：预期ME（描述） |
+| --- | --- | --- | --- |
+| L1_FB | -66.62 | 8.44 | 8.28 |
+| L1_CP05 | 20.45 | -10.16 | 27.22 |
+| L1_MS17 | 13.90 | -44.41 | 7.11 |
+| L1_CP15 | 61.40 | -61.98 | 4.37 |
+| L1_Full | -83.32 | -427.94 | -193.35 |
+| L3_GC | -50.98 | -4.19 | 23.82 |
+| L4_Real | 45.85 | 39.93 | 59.17 |
+| L4_GC | 51.97 | 49.37 | 63.61 |
+
+**完整折内清洗。** [FRED-MD原文脚注5](https://files.stlouisfed.org/files/htdocs/wp/2015/2015-012.pdf)规定，
+将偏离中位数超过10倍IQR的变换后观测视为缺失。本轮阈值只从成熟训练行估计，分别用于原宏观面板和17个已筛选模板特征，
+在提取LN与模板PC之前清洗，再重新构建LN5/LN6及L3的当期＋滞后项。
+`fred10_mean`随后使用训练均值填补，属于对原文EM填补的近似；`fred10_previous`使用历史前值，
+结合读本Huang等§2的前值替换原则。两者均不声称为PPT的未披露预处理。候选成员、数据版本、CP/MS/CP15/ME与标签保持相同。
+每个内层折也独立清洗和提取因子；不把外层阈值或PC带入早期内层验证。
+两个ME定义×两种新清洗×Real/GC各32个XGB候选，共新增256次参数试验；深度2、100树保持一致。
+EN仍用动态隔离CV，执行层每个分支128次验证期搜索。所有分支均公布，不按测试结果选清洗方法。
+
+| ME定义 | 清洗 | 验证L4_GC均值R² (%) | 测试L4_GC均值R² (%) | 测试Full均值R² (%) |
+| --- | --- | --- | --- | --- |
+| dispersion | raw | 53.50 | -0.23 | -411137.44 |
+| dispersion | fred10_mean | 59.79 | -0.16 | -8.24 |
+| dispersion | fred10_previous | 52.12 | 2.28 | -4.94 |
+| expectations | raw | 49.37 | 3.93 | -617989.09 |
+| expectations | fred10_mean | 52.19 | 3.85 | -37.89 |
+| expectations | fred10_previous | 51.03 | 3.20 | -40.66 |
+
+**验证期选择及投资结果。** 下表同时报告原始与两种改进的零成本真实月度账户；
+信号仍预测一年收益，逐月按同一债券剩余期限重定价。CAGR、夏普与重叠年标签指标分开。
+
+| ME定义 | 清洗 | 执行方式 | CAGR (%) | 超额夏普 | 月末回撤 (%) |
+| --- | --- | --- | --- | --- | --- |
+| dispersion | raw | direct | 0.81 | -0.106 | -11.01 |
+| dispersion | raw | optimized | 1.05 | -0.031 | -8.38 |
+| dispersion | fred10_mean | direct | 1.43 | 0.129 | -8.17 |
+| dispersion | fred10_mean | optimized | 1.36 | 0.111 | -7.81 |
+| dispersion | fred10_previous | direct | 0.72 | -0.158 | -10.31 |
+| dispersion | fred10_previous | optimized | 1.03 | -0.186 | -2.48 |
+| expectations | raw | direct | 1.19 | 0.028 | -7.08 |
+| expectations | raw | optimized | 1.14 | -0.001 | -5.53 |
+| expectations | fred10_mean | direct | 1.56 | 0.212 | -7.48 |
+| expectations | fred10_mean | optimized | 1.18 | 0.028 | -6.88 |
+| expectations | fred10_previous | direct | 1.54 | 0.195 | -6.99 |
+| expectations | fred10_previous | optimized | 1.16 | 0.057 | -0.74 |
+
+仅按成熟验证标签选择：**dispersion → fred10_mean**，验证平均R²=59.79%；其测试直接配置CAGR=1.43%、超额夏普=0.129。
+仅按成熟验证标签选择：**expectations → fred10_mean**，验证平均R²=52.19%；其测试直接配置CAGR=1.56%、超额夏普=0.212。
+
+![预处理改进的验证表现与真实月度净值](assets/peer_preprocessing.png)
+
+异常处理修复的是极值外推的数值稳定性，是否改善预测和配置分别由表中结果判断；不将预测R²改善自动解释为可交易超额收益。
+区块bootstrap效用区间、单边0.5/2/5bps压力、逐期限全部分支与参数日志保存在本地`output/peer_preprocessing/`。
+区间仅条件于已选择的分支，未覆盖此前全部研究搜索；所有测试历史已经接触，新增结果仍为回溯探索。
+原82项模板清单、ME聚合、GC设置及精确投资方程仍未披露；单一清洗实验不能据此确认剩余复现差距的唯一原因。
+<!-- BEGIN PEER_PREPROCESSING_EVIDENCE -->
+
+**独立回放及成本复核。** 576个新增外层折、7488条预测、2304次学习器回放、2016笔交易与256次预测/512次执行参数试验审计通过；86项回归测试通过。
+成本压力使用已冻结的预测及执行参数，不按成本重选方法。单边2bps时：
+
+| ME定义 | 同期RollingMV CAGR (%) | 直接配置 CAGR (%) / SR | 校准配置 CAGR (%) / SR |
+| --- | --- | --- | --- |
+| dispersion | 0.16 | 1.01 / -0.048 | 1.01 / -0.056 |
+| expectations | 0.16 | 1.24 / 0.056 | 0.92 / -0.120 |
+
+零费直接配置相对RollingMV的年度ΔCER及12月区块bootstrap的95%区间：
+dispersion为95.1bps [-114.6, 300.7]。
+expectations为111.0bps [-160.8, 387.3]。
+区间均包含零，尚未确认稳定的效用增益。
+<!-- END PEER_PREPROCESSING_EVIDENCE -->
+
+复核命令（先按§5.8生成并审计原始对应基线）：
+
+```bash
+python scripts/complete_peer_preprocessing.py
+python scripts/audit_peer_preprocessing.py
+```
+
+前者保存全部分支及选择记录并生成图表，后者独立回放预测和现金流、补充共同成本压力与审计结果。
+<!-- END PEER_PREPROCESSING -->
+
 ## 6. 已修复的问题与仍然存在的边界
 
 | 已修复 | 现在如何处理 |
@@ -1786,6 +1880,7 @@ bond_rp/
   peer_reference.py          PDF 对应的10文献＋5模板PC；固定初筛与折内重建
   peer_learners.py           动态EN嵌套时间验证、训练内Copula、深度2/100树
   peer_allocation.py         年度信号逐期限配置、月度真实价格账户与显式惩罚
+  peer_preprocessing.py      折内10IQR清洗、LN/模板PC重建与统一滞后基底
 scripts/
   run_analysis.py            修正后的完整研究入口
   export_readme_results.py   带缓存和审计记录的报告生成
@@ -1806,6 +1901,8 @@ scripts/
   fetch_peer_inputs.py       下载并验证官方SPF/EPU输入，保留已有版本
   rebuild_peer_reference.py  对应PDF前22页的完整验证段、双ME定义与执行校准
   export_peer_reference.py   源指纹/截止日/账户审计、PPT数字对照与结果图
+  complete_peer_preprocessing.py 两种清洗的完整重跑、同预算选参及双热力图对照
+  audit_peer_preprocessing.py 独立回放新增预测/账户、验证选择及共同费用复核
 code/
   replicate_papers.py        文献样本内公式对照
   strategy_analysis.py       转入统一入口的兼容命令
@@ -1815,6 +1912,7 @@ tests/
   test_trading_designs.py    债券期限缩短、月度时点与现金流恒等式
   test_coursework_alignment.py 文献配方、双阶段恒等式、PCA 可得性与 bootstrap-t
   test_refinements.py        sPCA/Goh 独立公式校验、未来扰动、成本效用与联合推断
+  test_peer_preprocessing.py 异常阈值可得性、前值替换、未来扰动及重建滞后基底
 assets/                     README 使用的结果图
 pyproject.toml
 README.md

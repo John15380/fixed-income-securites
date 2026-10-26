@@ -33,7 +33,7 @@
 
 50% 收缩后的组合篮子预测 R²_OOS 为：1 个月 **-0.11%**，3 个月 **-2.72%**，12 个月 **-6.41%**；三个持有期是独立预测评价，不能把年度重叠标签当作月度策略收益。策略的经济效果不等同于稳定提高均值预测精度。
 
-论文数值和实现一致性检查 **45/45 通过**。完整数值见 [论文对照表](results/paper_comparison.csv)、[系数](results/paper_coefficients.csv)和[误差与容差](results/paper_checks.csv)。
+实现与算法一致性检查 **45/45 通过**；逐项核对的论文印刷数值中 **203/217** 在公布精度内一致，其余差异保留并标明。完整数值见 [论文对照表](results/paper_comparison.csv)、[逐单元核验](results/published_cells.csv)和[算法检查](results/paper_checks.csv)。
 
 ![论文数值复现](assets/replication.png)
 <!-- /RESULTS -->
@@ -72,7 +72,7 @@ $$
 +\tfrac12\left(\widehat\mu_{CP,t}+\widehat\mu_{Macro8,t}+\widehat\mu_{Trend12,t}\right)/3.
 $$
 
-等权组合降低对某个因子或估计权重的依赖。[单因子与组合消融表](results/performance.csv)同时展示 FB、CP、LN6、Macro8、Trend12、CP＋Macro8，以及三类信息的组合；研究不以某个单独模型的最高历史夏普作为证明。
+等权组合降低对某个因子或估计权重的依赖。[单因子与组合消融表](results/performance.csv)同时展示 FB、CP、LN6、Macro8、Trend12、三种两两组合，以及三类信息的组合；研究不以某个单独模型的最高历史夏普作为证明。
 
 ### 滚动估计与信息可得性
 
@@ -126,12 +126,13 @@ Handbook 包是更新后的 **131 列宏观面板**，与 RFS 原始 132 序列�
 
 | 问题 | 提供的检验与结果文件 |
 | --- | --- |
-| 为什么组合这三类信息？ | 覆盖曲线、宏观与趋势，等权避免再估计组合权重；同时报告各单信号及移除趋势后的组合：[消融结果](results/performance.csv) |
-| 为什么 MA12？ | MA12 是年度价格趋势的固定定义；完整对照 3、6、9、12、18、24 个月：[参数敏感性](results/sensitivity.csv) |
+| 为什么组合这三类信息？ | 覆盖曲线、宏观与趋势，等权避免再估计组合权重；各单信号、全部两两组合和三信号组合使用同一账本，并用 2013 年以前已结算账户冻结一次模型选择：[消融结果](results/performance.csv)、[因子选择验证](results/factor_validation.csv) |
+| 为什么 MA12？ | MA12 是年度价格趋势的固定定义；完整对照 3、6、9、12、18、24 个月，并纳入联合参数网格：[参数敏感性](results/sensitivity.csv)、[参数网格](results/parameter_grid.csv) |
 | 换样本外起点是否成立？ | 1985、1990、1995、2000 起点使用相同滚动规则；早期缺少同等宏观历史版本，故明确使用修订数据：[起点检验](results/revised_origins.csv) |
-| γ 与杠杆上限是否事后挑选？ | 主设定 γ=5、上限 1；另报 γ=2/10、仓位上限 0.5/0.75、风险窗 36/120、训练窗 240/扩展窗、收缩 0/1：[敏感性](results/sensitivity.csv) |
+| γ 与杠杆上限是否事后挑选？ | 主设定 γ=5、上限 1；324 组联合网格、2013 年冻结选择、逐年滚动选择及家族 max-t 修正均单独报告：[参数网格](results/parameter_grid.csv)、[因果选择结果](results/selection_performance.csv)、[家族检验](results/parameter_family_tests.csv) |
+| 宏观数据是否按可得时点处理？ | 对每月历史版本、最新参考月和 lag 1/2/3 的可用序列数逐月审计，并在相同日历比较更早与更宽松信息集：[宏观时点](results/macro_information.csv)、[假设对照](results/assumption_performance.csv) |
 | 成本与同收盘交易是否影响结论？ | 双边各 0/0.5/2/5 bp、信号延迟一个月；延迟检验保持相同起止月份：[敏感性](results/sensitivity.csv) |
-| 是否真正改善预测？ | 1/3/12 月篮子及各期限 R²_OOS、HAC 损失差；原始嵌套篮子 OLS 与 EH 才使用 CW：[原始预测](results/raw_forecast_scores.csv)、[实际收缩预测](results/forecast_scores.csv) |
+| 是否真正改善预测？ | 1/3/12 月篮子及各期限 R²_OOS、HAC 损失差；同一评价样本另分解历史均值 SSE、中心化 TSS 和事后校准上限：[实际收缩预测](results/forecast_scores.csv)、[R² 分解](results/r2_accounting.csv) |
 | 投资价值是否显著？ | 26 个不重叠年度账户计算 CER；3 年区块重采样给出差值区间；对披露的模型族提供共同区块 max-t 检验：[年度效用](results/annual_utility.csv)、[CER 区间](results/cer_intervals.csv)、[主动收益检验](results/active_return_tests.csv) |
 
 样本内 R² 使用同样本的常数均值作分母；样本外 R² 使用每期训练窗的历史均值预测误差作分母。它们的样本、基准和波动状态不同，**OOS R² 高于 IS R² 不自动说明错误，也不能据此声称模型更稳定**。[样本内表](results/in_sample.csv)与样本外表分别报告；常数和单一 OLS 篮子模型另给调整 R²，[系数表](results/in_sample_coefficients.csv)报告 HAC 标准误与双侧 p 值。CP 为第一阶段篮子回归，宏观推断条件于估计得到的 PC，不将其误称为完整两阶段 GMM 标准误。两类 R² 分开解释，不把二者当作同一统计量排名。
@@ -183,7 +184,7 @@ bond_rp/
   models.py, factors.py     训练窗预处理、共享 CP/LN 指数估计
   forecasting.py           历史版本递归预测与多期限标签
   portfolio.py             完全融资的月度现金账本
-  evaluation.py, inference.py  预测、经济价值与稳健性检验
+  evaluation.py, inference.py, validation.py  预测、经济价值、选择与稳健性检验
   replication.py           原论文数值核验
   reporting.py             结果表与研究图
 scripts/                   下载、论文核验、完整重跑、独立账本审计

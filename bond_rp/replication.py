@@ -163,3 +163,83 @@ def run_replication():
     if not checks.passed.all():
         raise AssertionError(checks.loc[~checks.passed].to_string(index=False))
     return result, checks, pd.DataFrame(coefficients), sources
+
+
+def published_cells(comparison,coefficients):
+    """Cell-level coverage, including discrepancies; not a claim to all paper tables.
+
+    Targets were checked visually against CP Table 1 and LN Table 2. Printing
+    precision and algorithmic identity tolerances are kept separate. A missed
+    printed cell is reported, never turned into a passed reconstruction check.
+    """
+    rows=[]
+    def cell(paper,table,model,maturity,statistic,term,target,actual,decimals=2):
+        tolerance=.5*10.**(-decimals)
+        rows.append(dict(paper=paper,table=table,model=model,maturity=maturity,statistic=statistic,
+                         term=term,published=target,reproduced=float(actual),difference=float(actual)-target,
+                         printing_tolerance=tolerance,matches_printing=bool(abs(actual-target)<=tolerance+1e-9)))
+    for r in comparison.itertuples():
+        if pd.notna(r.published):
+            paper="FB87" if r.model=="FB87" else "CP05" if r.model.startswith(("CP05","FB in")) else "LN09"
+            table="1" if paper=="FB87" or r.model=="CP05 restricted" else "2"
+            cell(paper,table,r.model,r.maturity,r.statistic,"R2",r.published,r.reproduced)
+    for r in coefficients.itertuples():
+        cell("CP05" if r.model=="CP05" else "FB87","1",r.model,"basket", "coefficient",r.term,r.published,r.reproduced)
+    b=load_bond_data().set_index("ym").loc["1964-01":"2002-12"]
+    X=sm.add_constant(b[[f"f{n}" for n in range(1,6)]])
+    y=b[[f"rx{n}" for n in range(2,6)]].to_numpy()
+    fit=sm.OLS(y.mean(axis=1),X).fit(cov_type="HAC",cov_kwds={"maxlags":18,"use_correction":False})
+    cell("CP05","1A","CP05","basket","R2","first_stage",.35,fit.rsquared)
+    for term,reference in zip(X.columns,[1.31,.34,.69,.55,.46,.41]):
+        cell("CP05","1A","CP05","basket","NW18_se",term,reference,fit.bse[term])
+    beta=fit.params.iloc[1:].to_numpy()
+    wald=beta@np.linalg.inv(fit.cov_params().iloc[1:,1:])@beta
+    cell("CP05","1A","CP05","basket","NW18_Wald","joint_slopes",105.5,wald,1)
+    pred,first,second=common_index(X.iloc[:,1:],y,X.iloc[:,1:],second_intercept=False)
+    for n,target,actual in zip(range(2,6),[.47,.87,1.24,1.43],second.coef_.ravel()):
+        cell("CP05","1B","CP05",n,"coefficient","b_n",target,actual)
+
+    # Exact author's HH moment convention: each lag's truncated block is
+    # separately demeaned. This differs slightly from generic HAC packages.
+    xx=X.to_numpy();g=np.r_[first.intercept_,first.coef_];index=xx@g
+    bn=second.coef_.ravel();err=y-index[:,None]*bn
+    u=np.column_stack([(y.mean(1)-index)[:,None]*xx,err*index[:,None]])
+    N=len(xx);S=u.T@u/N
+    for k in range(1,13):
+        a=u[k:]-u[k:].mean(0);c=u[:-k]-u[:-k].mean(0)
+        q=a.T@c/N;S+=q+q.T
+    eff=xx.T@xx/N
+    jacobian=-np.block([[eff,np.zeros((6,4))],[-y.T@xx/N+2*np.outer(bn,g)@eff,(g@eff@g)*np.eye(4)]])
+    inv=np.linalg.inv(jacobian)
+    se=np.sqrt(np.diag(inv@S@inv.T/N))
+    for n,target,actual in zip(range(2,6),[.03,.02,.01,.04],se[6:]):
+        cell("CP05","1B","CP05",n,"two_stage_HH12_se","b_n",target,actual)
+
+    author=author_ln_data().dropna(subset=[f"rx{n}" for n in range(2,6)])
+    # For each specification, rows are maturities 2..5; None means unreported.
+    definitions=[
+        ("CP",["CP"],[[.45],[.85],[1.24],[1.46]],[[8.90],[8.52],[8.58],[7.90]]),
+        ("LN5 terms",LN5,[[-.93,.06,.18,-.33,.35],[-1.59,.11,.19,-.53,.64],[-2.05,.16,.18,-.63,.95],[-2.27,.18,.18,-.78,1.13]],
+         [[-4.96,2.87,1.87,-2.65,3.83],[-4.68,3.12,1.05,-2.23,3.73],[-4.49,3.20,.68,-1.77,3.75],[-4.10,3.06,.55,-1.80,3.68]]),
+        ("LN6 terms",LN6,[[-.93,.06,-.40,.18,-.33,.35],None,None,None],
+         [[-5.19,2.78,-3.10,2.24,-2.94,4.35],None,None,None]),
+        ("LN5 released",["LN5"],[[.54],[.91],[1.19],[1.36]],[[5.52],[5.28],[5.08],[4.80]]),
+        ("LN6 released",["LN6"],[[.50],[.89],[1.20],[1.41]],[[6.78],[6.57],[6.57],[6.47]]),
+        ("CP+LN5",["CP","LN5"],[[.39,.43],[.75,.69],[1.11,.87],[1.32,.98]],
+         [[6.,5.78],[6.16,5.55],[6.30,5.39],[5.87,5.08]]),
+        ("LN5 terms+CP",[*LN5,"CP"],
+         [[-.75,.05,.24,-.25,.24,.40],[-1.22,.10,.30,-.36,.44,.76],[-1.51,.14,.35,-.37,.64,1.13],[-1.63,.15,.38,-.48,.76,1.34]],
+         [[-4.71,2.71,3.85,-2.61,2.89,5.89],[-4.39,2.96,2.78,-2.12,2.74,6.13],[-4.20,3.08,2.22,-1.50,2.83,6.40],[-3.86,2.95,1.92,-1.54,2.76,6.00]]),
+        ("LN6 terms+CP",[*LN6,"CP"],[[-.74,.05,.08,.24,-.24,.24,.41],None,None,None],
+         [[-4.48,2.70,.71,3.84,-2.51,2.70,5.22],None,None,None])]
+    for name,terms,targets,tvalues in definitions:
+        for n,values,trefs in zip(range(2,6),targets,tvalues):
+            if values is None:
+                continue
+            fit=sm.OLS(author[f"rx{n}"],sm.add_constant(author[terms])).fit(
+                cov_type="HAC",cov_kwds={"maxlags":18,"use_correction":False})
+            for term,expected,expected_t in zip(terms,values,trefs):
+                cell("LN09","2",name,n,"coefficient",term,expected,fit.params[term])
+                decimals=1 if name=="CP+LN5" and n==2 and term=="CP" else 2
+                cell("LN09","2",name,n,"NW18_t",term,expected_t,fit.tvalues[term],decimals)
+    return pd.DataFrame(rows)

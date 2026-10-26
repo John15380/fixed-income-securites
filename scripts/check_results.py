@@ -57,8 +57,83 @@ def main():
         n+=len(a)
     checks=pd.read_csv(out/"paper_checks.csv")
     assert checks.passed.all()
+    # The final model family must contain every singleton, all pairwise
+    # combinations, and the fixed three-signal ensemble. This makes the stated
+    # factor choice an executable ablation rather than a narrative assertion.
+    required={"CP","Macro8","Trend12","CP_Macro8","CP_Trend12",
+              "Macro8_Trend12","EW3"}
+    assert required.issubset(set(performance.index))
+
+    # The 324-cell design grid is retrospective.  Its base cell must replay the
+    # published strategy exactly, and the causal schedules may only consume
+    # accounts whose sales precede the selection date.
+    grid=pd.read_csv(out/"parameter_grid.csv",dtype={"window":str})
+    assert grid.config.nunique()==324 and set(grid.period)=={"full","validation","later"}
+    base=grid.loc[(grid.config=="cfg000")&(grid.period=="full")].iloc[0]
+    assert (base.window,base.ma,base.gamma,base.shrink,base.cap)==("120",12,5.,.5,1.)
+    for column in ("cagr_pct","sharpe","vol_pct","max_dd_pct","terminal_wealth"):
+        np.testing.assert_allclose(base[column],performance.loc["EW3",column],atol=1e-12,rtol=0)
+    schedule=pd.read_csv(out/"selection_schedule.csv",dtype={"window":str})
+    selected=pd.PeriodIndex(schedule.selected_at,freq="M")
+    sale=pd.PeriodIndex(schedule.last_validation_sale,freq="M")
+    purchase=pd.PeriodIndex(schedule.purchase,freq="M")
+    assert (sale<selected).all() and (selected<=purchase).all()
+    assert (schedule.validation_months>=60).all()
+    family=pd.read_csv(out/"parameter_family_tests.csv")
+    assert family.family_configs.eq(324).all() and set(family.period)=={"full","later"}
+    factor=pd.read_csv(out/"factor_validation.csv")
+    assert factor.model.nunique()==9 and set(factor.period)=={"validation","later"}
+    assert factor.groupby("period").selected_before_cutoff.sum().eq(1).all()
+    assert factor.last_validation_sale.lt(factor.selection_cutoff).all()
+    assert factor.validation_months.ge(60).all()
+
+    # Historical monthly-vintage coverage is auditable month by month.  File
+    # labels and reference dates are separate; the t-1 file's latest populated
+    # reference is normally t-2, which is the information used by the strategy.
+    macro=pd.read_csv(out/"macro_information.csv")
+    purchase=pd.PeriodIndex(macro.purchase,freq="M")
+    assert len(macro)==312 and (pd.PeriodIndex(macro.vintage,freq="M")==purchase-1).all()
+    assert (pd.PeriodIndex(macro.last_reference,freq="M")<=purchase-2).all()
+    assert macro.reference_lag1_available.eq(0).all()
+    assert macro.reference_lag2_available.gt(0).all()
+
+    # Every relaxed-information and leverage comparison uses the identical
+    # 2000-01..2025-12 calendar.  Its own forecast audit must encode the timing
+    # assumptions explicitly rather than silently changing the sample.
+    assumptions=pd.read_csv(out/"assumption_performance.csv")
+    assert assumptions.months.eq(312).all()
+    assert assumptions.start.eq("2000-01").all() and assumptions.last_purchase.eq("2025-12").all()
+    timing={"archival_lag3":(1,3,1),"current_vintage_lag2":(0,2,1),
+            "current_vintage_lag1":(0,1,1),"same_close_labels":(1,2,0),
+            "same_close_all":(0,1,0)}
+    for name,(delay,lag,embargo) in timing.items():
+        audit=pd.read_csv(out/"validation"/name/"forecast_audit.csv")
+        dates=pd.PeriodIndex(audit.ym,freq="M")
+        assert audit.macro_lag.eq(lag).all() and audit.embargo.eq(embargo).all()
+        assert (pd.PeriodIndex(audit.vintage,freq="M")==dates-delay).all()
+        assert (pd.PeriodIndex(audit.latest_macro_reference,freq="M")==dates-lag).all()
+        label_end=pd.PeriodIndex(audit.last_label_end,freq="M")
+        assert (label_end<dates).all() if embargo else (label_end<=dates).all()
+
+    # OOS R2, same-sample centered R2, and the historical-mean denominator are
+    # linked by an exact identity.  The post-hoc calibration column is diagnostic
+    # only and cannot enter trading decisions.
+    accounting=pd.read_csv(out/"r2_accounting.csv")
+    identity=1-(1-accounting.r2_centered)/accounting.eh_denominator_ratio
+    np.testing.assert_allclose(accounting.r2_oos,identity,atol=1e-12,rtol=0)
+    assert (accounting.calibrated_signal_r2+1e-12>=accounting.r2_centered).all()
+
+    # Published-cell coverage includes known, visible data-vintage and printed-
+    # precision misses.  Only the separate algorithmic checks are all-pass.
+    cells=pd.read_csv(out/"published_cells.csv")
+    assert set(cells.paper)=={"FB87","CP05","LN09"} and len(cells)>=200
+    assert cells.matches_printing.any() and (~cells.matches_printing).any()
+    mismatch=cells.loc[~cells.matches_printing]
+    assert (mismatch.difference.abs()>mismatch.printing_tolerance).all()
     print(f"Verified {len(trades)} monthly account rows; max independent replay error {max_error:.3g}")
     print(f"Verified {n} forecast training/vintage audit rows and {len(checks)} paper checks")
+    print(f"Verified 324 parameter cells, {len(schedule)} causal selections, 9 factor candidates and {len(accounting)} R2 identities")
+    print(f"Published-table cell coverage: {int(cells.matches_printing.sum())}/{len(cells)} match printed precision")
     print("Input and source SHA-256 fingerprints match the completed run")
 
 

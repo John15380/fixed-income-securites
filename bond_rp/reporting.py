@@ -27,7 +27,9 @@ def export_report(out,root):
     results.mkdir(exist_ok=True)
     for name in ("performance","paper_comparison","paper_checks","paper_coefficients","sensitivity",
                  "subperiods","forecast_scores","raw_forecast_scores","in_sample","in_sample_coefficients","annual_utility",
-                 "active_return_tests","cer_intervals","revised_origins"):
+                 "active_return_tests","cer_intervals","revised_origins","parameter_grid",
+                 "selection_schedule","selection_performance","parameter_family_tests",
+                 "factor_validation","macro_information","assumption_performance","r2_accounting","published_cells"):
         shutil.copyfile(out/(name+".csv"),results/(name+".csv"))
     shutil.copyfile(out/"manifest.json",results/"data_manifest.json")
     trades=pd.read_csv(out/"monthly_accounts.csv")
@@ -85,6 +87,7 @@ def export_report(out,root):
     c=ci.loc["BuyHold"]
     ew=stats.loc["EW3"];bh=stats.loc["BuyHold"]
     checks=pd.read_csv(out/"paper_checks.csv")
+    cells=pd.read_csv(out/"published_cells.csv")
     block=f'''<!-- RESULTS -->
 建仓月份为 **2000-01 至 2026-01**，最后卖出月份为 **2026-02**，共 {int(ew.months)} 个连续月度账户。下表为历史宏观版本主实验；债券买卖双边各扣 0.5 bp，所有策略使用相同现金账户和交易规则。
 
@@ -100,7 +103,7 @@ def export_report(out,root):
 
 50% 收缩后的组合篮子预测 R²_OOS 为：1 个月 **{100*r2.loc[1,'r2_oos']:.2f}%**，3 个月 **{100*r2.loc[3,'r2_oos']:.2f}%**，12 个月 **{100*r2.loc[12,'r2_oos']:.2f}%**；三个持有期是独立预测评价，不能把年度重叠标签当作月度策略收益。策略的经济效果不等同于稳定提高均值预测精度。
 
-论文数值和实现一致性检查 **{int(checks.passed.sum())}/{len(checks)} 通过**。完整数值见 [论文对照表](results/paper_comparison.csv)、[系数](results/paper_coefficients.csv)和[误差与容差](results/paper_checks.csv)。
+实现与算法一致性检查 **{int(checks.passed.sum())}/{len(checks)} 通过**；逐项核对的论文印刷数值中 **{int(cells.matches_printing.sum())}/{len(cells)}** 在公布精度内一致，其余差异保留并标明。完整数值见 [论文对照表](results/paper_comparison.csv)、[逐单元核验](results/published_cells.csv)和[算法检查](results/paper_checks.csv)。
 
 ![论文数值复现](assets/replication.png)
 <!-- /RESULTS -->'''

@@ -27,10 +27,12 @@ def features_at(market, panel, *, lag=2, lookbacks=(12,)):
     return features
 
 
-def training_sample(data, month, horizon, window=120):
-    mask = (data.index >= TRAIN_START) & (data.index+horizon < month)
+def training_sample(data, month, horizon, window=120, embargo=1):
+    if embargo < 0:
+        raise ValueError("Label embargo must be nonnegative")
+    mask = (data.index >= TRAIN_START) & (data.index+horizon <= month-embargo)
     if window is not None:
-        mask &= data.index >= month-horizon-window
+        mask &= data.index >= month-horizon-embargo-window+1
     return data.loc[mask]
 
 
@@ -54,12 +56,15 @@ def fit_forecasts(train, current, macro_cols, targets, lookbacks=(12,)):
         values[f"Trend{k}"] = LinearRegression().fit(train[[f"trend{k}"]], y).predict(current[[f"trend{k}"]])
         values[f"EW3_MA{k}"] = np.mean([values["CP"], values["Macro8"], values[f"Trend{k}"]], axis=0)
     values["CP_Macro8"] = (values["CP"]+values["Macro8"])/2
+    values["CP_Trend12"] = (values["CP"]+values["Trend12"])/2
+    values["Macro8_Trend12"] = (values["Macro8"]+values["Trend12"])/2
+    values["CP_LN6"] = (values["CP"]+values["LN6"])/2
     values["EW3"] = values["EW3_MA12"]
     return values, int(pipe.named_steps["columns"].keep_.sum())
 
 
 def generate_forecasts(market, macro, *, archive=None, start="2000-01", end="2026-01",
-                       horizons=(1,3,12), windows=(120,), lookbacks=(3,6,9,12,18,24), lag=2):
+                       horizons=(1,3,12), windows=(120,), lookbacks=(3,6,9,12,18,24), lag=2, embargo=1):
     records, audit = [], []
     static = features_at(market, macro, lag=lag, lookbacks=lookbacks)
     dates = market.loc[start:end].index
@@ -78,7 +83,7 @@ def generate_forecasts(market, macro, *, archive=None, start="2000-01", end="202
             data = features.join(market[targets])
             eligible = data[required+targets].notna().all(axis=1) & data[mc].notna().any(axis=1)
             for window in windows:
-                train = training_sample(data.loc[eligible], date, h, window)
+                train = training_sample(data.loc[eligible], date, h, window, embargo)
                 if len(train) < 120:
                     raise ValueError(f"Insufficient training rows: {date}, h={h}, window={window}")
                 values, columns = fit_forecasts(train, features.loc[[date]], mc, targets, lookbacks)
@@ -89,7 +94,7 @@ def generate_forecasts(market, macro, *, archive=None, start="2000-01", end="202
                 audit.append(dict(ym=str(date), horizon=h, window=window_name, train_n=len(train),
                                   train_start=str(train.index.min()), last_label_end=str(train.index.max()+h),
                                   latest_macro_reference=str(date-lag), vintage=str(vintage) if vintage else "revised",
-                                  macro_columns=columns))
+                                  macro_columns=columns, embargo=embargo, macro_lag=lag))
         if date.month == 1 and date.year % 5 == 0:
             print(f"Forecasts through {date}: {'archival' if archive else 'revised'}", flush=True)
     return pd.DataFrame(records), pd.DataFrame(audit)

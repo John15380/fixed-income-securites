@@ -9,7 +9,8 @@ from .factors import ln6_terms
 from .inference import mean_hac_t, joint_block_bootstrap_t
 from .portfolio import simulate, summarize, annual_accounts
 
-PRIMARY = ("EH", "FB", "CP", "LN6", "Macro8", "Trend12", "CP_Macro8", "EW3")
+PRIMARY = ("EH", "FB", "CP", "LN6", "Macro8", "Trend12", "CP_Macro8",
+           "CP_Trend12", "Macro8_Trend12", "CP_LN6", "EW3")
 
 
 def forecast_scores(market, forecasts, shrink=.5):
@@ -35,7 +36,8 @@ def forecast_scores(market, forecasts, shrink=.5):
                     cw = float(mean_hac_t(loss+(b-f)**2,lags=max(6,18 if h==12 else h)))
                 rows.append(dict(horizon=h,window=window,model=name,maturity=label,months=len(index),
                                  start=str(index.min()),last_purchase=str(index.max()),shrink=shrink,
-                                 mse=mse,r2_oos=1-mse/mse0,hac_loss_t=t,hac_loss_p=float(norm.sf(t)),
+                                 mse=mse,r2_oos=1-mse/mse0,hac_loss_t=t,
+                                 hac_loss_p=float(norm.sf(t)) if name!="EH" else np.nan,
                                  cw_t=cw,cw_p=float(norm.sf(cw)) if np.isfinite(cw) else np.nan))
     return pd.DataFrame(rows)
 

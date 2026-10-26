@@ -16,10 +16,44 @@ def performance(returns, risk_free):
                 mean_excess_pct=1200*excess.mean(), terminal_wealth=wealth[-1])
 
 
+def risk_information(market, dates, risk_window=60, embargo=1):
+    if embargo < 0:
+        raise ValueError("Risk embargo must be nonnegative")
+    variances, cutoffs = [], []
+    for t in dates:
+        past = market.loc[(market.index+1<=t-embargo)&(market.index>=t-embargo-risk_window),
+                          [f"mx{n}" for n in range(2,6)]].dropna()/100
+        if len(past)<36:
+            raise ValueError("Insufficient risk history")
+        variances.append(max(past.mean(axis=1).var(ddof=1),1e-10))
+        cutoffs.append(str(past.index.max()+1))
+    return np.array(variances), cutoffs
+
+
+def basket_account(weights, basket_returns, risk_free, cost_bps=.5, borrow_spread_bps=50.):
+    """Common ledger for one or many policies; annual borrowing spread is explicit.
+
+    Only weights above one may borrow. A fully invested, unlevered position
+    reserves its entry fee. Negative cash pays the realized bill rate plus
+    the stated spread. This is a financing sensitivity, not an observed loan.
+    """
+    w=np.array(weights,dtype=float,copy=True)
+    if (w<0).any() or cost_bps<0 or borrow_spread_bps<0:
+        raise ValueError("Invalid long-only ledger inputs")
+    c=cost_bps/10000
+    w*=np.where(w<=1,np.minimum(1.,1/np.maximum(w*(1+c),1e-15)),1.)
+    cash=1-w-c*w
+    financing=np.maximum(-cash,0)*borrow_spread_bps/120000
+    net=cash*(1+risk_free)+w*(1+basket_returns)*(1-c)-financing-1
+    gross=risk_free+w*(basket_returns-risk_free)
+    return dict(return_net=net,return_gross=gross,cost=gross-net-financing,
+                financing=financing,gross_exposure=w,cash_after_entry=cash)
+
+
 def simulate(market, forecasts, *, start="2000-01", end="2026-01", gamma=5., cap=1.,
-             shrink=.5, risk_window=60, cost_bps=.5, delay=0):
-    if not (gamma>0 and 0<cap<=1 and 0<=shrink<=1 and cost_bps>=0 and delay>=0):
-        raise ValueError("Invalid fully funded strategy parameters")
+             shrink=.5, risk_window=60, cost_bps=.5, delay=0, risk_embargo=1, borrow_spread_bps=50.):
+    if not (gamma>0 and 0<cap<=3 and 0<=shrink<=1 and cost_bps>=0 and delay>=0):
+        raise ValueError("Invalid strategy parameters")
     forecasts = forecasts.copy()
     if set(forecasts.horizon) != {1} or forecasts.window.nunique() != 1:
         raise ValueError("One monthly forecast window per account")
@@ -30,18 +64,10 @@ def simulate(market, forecasts, *, start="2000-01", end="2026-01", gamma=5., cap
         dates = dates.intersection(p.index+delay)
     if not len(dates) or not (np.diff(dates.asi8)==1).all():
         raise ValueError("Account needs a contiguous common monthly calendar")
-    variances, cutoffs = [], []
-    for t in dates:
-        past = market.loc[(market.index+1<t)&(market.index>=t-1-risk_window), [f"mx{n}" for n in range(2,6)]].dropna()/100
-        if len(past)<36:
-            raise ValueError("Insufficient risk history")
-        variances.append(max(past.mean(axis=1).var(ddof=1),1e-10))
-        cutoffs.append(str(past.index.max()+1))
-    variance = np.array(variances)
+    variance,cutoffs = risk_information(market,dates,risk_window,risk_embargo)
     decision = dates-delay
     actual = market.loc[dates, [f"mr{n}" for n in range(2,6)]].to_numpy()/100
     rf = market.rf_month.reindex(dates).to_numpy()/100
-    c = cost_bps/10000
     records = []
     for name in [*pred, "BuyHold", "Cash"]:
         if name == "BuyHold":
@@ -51,19 +77,13 @@ def simulate(market, forecasts, *, start="2000-01", end="2026-01", gamma=5., cap
         else:
             mu = pred["EH"].loc[decision]+shrink*(pred[name].loc[decision]-pred["EH"].loc[decision])
             w = np.clip(mu.mean(axis=1).to_numpy()/(gamma*variance),0,cap)
-        # q is the actual fraction of opening wealth spent on each maturity.
-        # Reserve entry fees in cash; after one month liquidate every bond.
-        w = w*np.minimum(1.,1/np.maximum(w*(1+c),1e-15))
+        account=basket_account(w,actual.mean(axis=1),rf,cost_bps,borrow_spread_bps)
+        w=account["gross_exposure"]
         q = np.repeat((w/4)[:,None],4,axis=1)
-        cash = 1-w-c*w
-        ending = cash*(1+rf)+(q*(1+actual)*(1-c)).sum(axis=1)
-        gross = rf+(q*(actual-rf[:,None])).sum(axis=1)
-        net = ending-1
-        if (cash < -1e-12).any():
+        if cap<=1 and (account["cash_after_entry"] < -1e-12).any():
             raise AssertionError("Unfunded entry")
         records.append(pd.DataFrame(dict(model=name,purchase=dates.astype(str),sale=(dates+1).astype(str),
-                         decision=decision.astype(str),return_net=net,return_gross=gross,risk_free=rf,
-                         cost=gross-net,gross_exposure=w,cash_after_entry=cash,risk_last_label_end=cutoffs,
+                         decision=decision.astype(str),risk_free=rf,**account,risk_last_label_end=cutoffs,
                          **{f"q{n}":q[:,n-2] for n in range(2,6)})))
     trades = pd.concat(records,ignore_index=True)
     return summarize(trades), trades

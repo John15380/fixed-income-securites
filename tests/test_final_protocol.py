@@ -12,7 +12,8 @@ from bond_rp.forecasting import training_sample, fit_forecasts
 from bond_rp.factors import common_index, ln6_terms
 from bond_rp.inference import mean_hac_t, block_bootstrap_t
 from bond_rp.vintages import VintageArchive, VINTAGE_URLS
-from bond_rp.portfolio import simulate, performance
+from bond_rp.portfolio import simulate, performance, basket_account
+from bond_rp.validation import r2_components, choose_policy
 
 class ResearchProtocol(unittest.TestCase):
     def test_cp_matches_independent_restricted_regression(self):
@@ -46,6 +47,15 @@ class ResearchProtocol(unittest.TestCase):
             self.assertEqual(len(train),120)
             self.assertEqual(train.index.max()+h,t-1)
             self.assertFalse((train.index+h>=t).any())
+
+    def test_same_close_alternative_keeps_the_window_length(self):
+        dates=pd.period_range('1990-01','2020-12',freq='M')
+        frame=pd.DataFrame({'x':np.arange(len(dates))},index=dates)
+        t=pd.Period('2020-01','M')
+        for h in (1,3,12):
+            a=training_sample(frame,t,h,120,embargo=0)
+            self.assertEqual(len(a),120)
+            self.assertEqual(a.index.max()+h,t)
 
     def test_training_preprocessing_ignores_future_rows(self):
         rng=np.random.default_rng(7)
@@ -108,6 +118,36 @@ class ResearchProtocol(unittest.TestCase):
         a=block_bootstrap_t(x,lags=6,block=12,replications=199)
         b=block_bootstrap_t(x*100,lags=6,block=12,replications=199)
         self.assertEqual(a['bootstrap_p'],b['bootstrap_p'])
+
+    def test_borrowing_charges_entry_fees_and_funding_spread(self):
+        w=np.array([.5,1.,2.,3.])
+        r=np.array([.01]*4);rf=np.array([.002]*4)
+        account=basket_account(w,r,rf,cost_bps=5,borrow_spread_bps=120)
+        q=account['gross_exposure'];cash=1-q-q*.0005
+        expected=cash*(1+rf)+q*(1+r)*(1-.0005)-np.maximum(-cash,0)*.001-1
+        np.testing.assert_allclose(account['return_net'],expected,atol=1e-14)
+        self.assertEqual(account['financing'][0],0)
+        self.assertAlmostEqual(account['financing'][2],1.001*.001)
+
+    def test_r2_decomposition_exposes_a_weak_mean_benchmark(self):
+        y=np.array([-1.,1.,-1.,1.])
+        p=np.zeros(4);b=np.full(4,3.)
+        s=r2_components(y,p,b)
+        self.assertAlmostEqual(s['r2_centered'],0.)
+        self.assertAlmostEqual(s['r2_oos'],.9)
+        self.assertAlmostEqual(s['r2_oos'],1-(1-s['r2_centered'])/s['eh_denominator_ratio'])
+
+    def test_validation_selection_cannot_use_future_account_returns(self):
+        rng=np.random.default_rng(5)
+        dates=pd.period_range('2000-01',periods=200,freq='M')
+        returns=rng.normal(0,.01,(200,3))
+        cutoff=pd.Period('2010-01','M')
+        before,info=choose_policy(returns,dates,cutoff)
+        returns[dates+1>=cutoff]=rng.normal(100,1,(np.sum(dates+1>=cutoff),3))
+        after,changed=choose_policy(returns,dates,cutoff)
+        self.assertEqual(before,after)
+        self.assertEqual(info,changed)
+        self.assertLess(pd.Period(info['last_validation_sale'],'M'),cutoff)
 
 if __name__=='__main__':
     unittest.main()

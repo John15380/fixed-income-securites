@@ -38,6 +38,7 @@ def cached_forecasts(directory,market,macro,archive,**kwargs):
     paths=[ROOT/"bond_rp"/(name+".py") for name in
            ("config","data","market","models","factors","forecasting","vintages")]
     stamp=dict(inputs=fingerprint(),settings=kwargs,
+               vintage_delay=archive.vintage_delay if archive is not None else None,
                source={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in paths},
                numpy=np.__version__,pandas=pd.__version__,sklearn=sklearn.__version__,scipy=scipy.__version__)
     key=json.dumps(stamp,sort_keys=True)
@@ -96,6 +97,11 @@ def main():
         s["oos_origin"]=start
         origins.append(s)
     pd.concat(origins,ignore_index=True).to_csv(out/"revised_origins.csv",index=False)
+    from bond_rp.validation import run_validation
+    from bond_rp.replication import published_cells
+    print("Auditing parameter selection, information timing and R2 denominators",flush=True)
+    run_validation(market,macro,p,hp,revised,out,cached_forecasts)
+    published_cells(replication,coefficients).to_csv(out/"published_cells.csv",index=False)
     sources=fingerprint()
     source_paths=(sorted((ROOT/"bond_rp").glob("*.py"))+sorted((ROOT/"scripts").glob("*.py"))
                   +sorted((ROOT/"tests").glob("*.py"))+[ROOT/"pyproject.toml"])

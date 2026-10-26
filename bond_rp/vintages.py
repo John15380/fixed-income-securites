@@ -33,7 +33,10 @@ class VintageArchive:
     It is a monthly-vintage experiment, not certification of daily availability.
     """
 
-    def __init__(self, directory):
+    def __init__(self, directory, vintage_delay=1):
+        if vintage_delay not in (0,1):
+            raise ValueError("Vintage delay must be zero or one month")
+        self.vintage_delay = vintage_delay
         self.members = {}
         self.archives = []
         for name in VINTAGE_URLS:
@@ -49,7 +52,7 @@ class VintageArchive:
                     self.members[date] = (archive, member)
 
     def at(self, forecast_month):
-        vintage = pd.Period(forecast_month, "M")-1
+        vintage = pd.Period(forecast_month, "M")-self.vintage_delay
         archive, member = self.members[vintage]  # A missing vintage fails loudly.
         with archive.open(member) as source:
             data = transform_fred_csv(source)

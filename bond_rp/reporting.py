@@ -30,7 +30,9 @@ def export_report(out,root):
                  "active_return_tests","cer_intervals","revised_origins","parameter_grid",
                  "selection_schedule","selection_performance","parameter_family_tests",
                  "factor_validation","financing_grid","financing_summary","macro_information",
-                 "assumption_performance","r2_accounting","published_cells"):
+                 "assumption_performance","r2_accounting","published_cells",
+                 "maturity_allocation","nonlinear_search","nonlinear_selection",
+                 "model_performance","model_forecast_scores"):
         shutil.copyfile(out/(name+".csv"),results/(name+".csv"))
     shutil.copyfile(out/"manifest.json",results/"data_manifest.json")
     trades=pd.read_csv(out/"monthly_accounts.csv")
@@ -72,6 +74,23 @@ def export_report(out,root):
     axs[0].set_ylabel("R-squared (LN: adjusted)");axs[0].legend(frameon=False,fontsize=8)
     fig.suptitle("Numerical replication using public author archives",weight="bold",fontsize=12)
     fig.tight_layout();fig.savefig(assets/"replication.png");plt.close(fig)
+    models=pd.read_csv(out/"model_performance.csv")
+    hold=models.loc[models.period.eq("holdout_2013_2026")].copy()
+    order=hold.sort_values("cagr_pct",ascending=False).model.tolist()
+    hold=hold.set_index("model").loc[order]
+    scores=pd.read_csv(out/"model_forecast_scores.csv")
+    scores=scores.loc[scores.period.eq("holdout_2013_2026")&scores.maturity.astype(str).eq("basket")].set_index("model")
+    fig,axes=plt.subplots(1,3,figsize=(11,3.4))
+    axes[0].barh(order[::-1],hold.loc[order[::-1],"cagr_pct"],color="#6f9ba4")
+    axes[0].set_xlabel("Net CAGR (%)");axes[0].set_title("2013+ return")
+    axes[1].barh(order[::-1],hold.loc[order[::-1],"sharpe"],color="#8e82b5")
+    axes[1].set_xlabel("Excess Sharpe");axes[1].set_title("2013+ risk-adjusted return")
+    axes[2].barh(order[::-1],scores.reindex(order[::-1]).r2_oos_pct,color="#c99554")
+    axes[2].axvline(0,color="#555",lw=.8);axes[2].set_xlabel("OOS R-squared (%)")
+    axes[2].set_title("2013+ basket forecast")
+    for ax in axes:ax.grid(axis="x",alpha=.18)
+    fig.suptitle("Frozen linear and nonlinear model comparison",weight="bold",fontsize=12)
+    fig.tight_layout();fig.savefig(assets/"model_comparison.png");plt.close(fig)
     # Update only the generated numerical section; methods remain hand-reviewed.
     show=stats.loc[["EW3","BuyHold","EH","Cash"],["cagr_pct","sharpe","vol_pct","max_dd_pct"]].reset_index()
     show["model"]=show.model.map({"EW3":"最终组合策略","BuyHold":"等权持有 2–5 年债券","EH":"历史均值择时","Cash":"短期国库券账户"})

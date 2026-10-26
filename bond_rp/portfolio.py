@@ -56,6 +56,34 @@ def basket_account(weights, basket_returns, risk_free, cost_bps=.5, borrow_sprea
                 absolute_exposure=np.abs(w),cash_after_entry=cash)
 
 
+def multi_asset_account(weights, asset_returns, risk_free, cost_bps=.5,
+                        borrow_spread_bps=50., short_borrow_bps=25.):
+    """Monthly entry/exit ledger for maturity-specific long or short weights."""
+    q=np.asarray(weights,float).copy();r=np.asarray(asset_returns,float);rf=np.asarray(risk_free,float)
+    if (q.ndim!=2 or q.shape!=r.shape or len(q)!=len(rf) or
+            not all(np.isfinite(x).all() for x in (q,r,rf)) or
+            min(cost_bps,borrow_spread_bps,short_borrow_bps)<0):
+        raise ValueError("Invalid multi-asset ledger inputs")
+    c=cost_bps/10000
+    total=q.sum(axis=1);absolute=np.abs(q).sum(axis=1)
+    # A nonlevered all-long position reserves its entry fee from initial cash.
+    funded=(q.min(axis=1)>=0)&(total>0)&(total<=1)
+    scale=np.ones(len(q))
+    scale[funded]=np.minimum(1.,1/np.maximum(total[funded]+c*absolute[funded],1e-15))
+    q*=scale[:,None]
+    total=q.sum(axis=1);absolute=np.abs(q).sum(axis=1)
+    cash=1-total-c*absolute
+    financing=np.maximum(-cash,0)*borrow_spread_bps/120000
+    short_fee=np.maximum(-q,0).sum(axis=1)*short_borrow_bps/120000
+    net=(cash*(1+rf)+(q*(1+r)).sum(axis=1)
+         -c*(np.abs(q)*(1+r)).sum(axis=1)-financing-short_fee-1)
+    gross=rf+(q*(r-rf[:,None])).sum(axis=1)
+    return dict(return_net=net,return_gross=gross,
+                cost=gross-net-financing-short_fee,financing=financing,
+                short_fee=short_fee,gross_exposure=total,
+                absolute_exposure=absolute,cash_after_entry=cash,weights=q)
+
+
 def simulate(market, forecasts, *, start="2000-01", end="2026-01", gamma=5., cap=1., floor=0.,
              shrink=.5, risk_window=60, cost_bps=.5, delay=0, risk_embargo=1,
              borrow_spread_bps=50., short_borrow_bps=25.):

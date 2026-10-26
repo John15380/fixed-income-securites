@@ -2,7 +2,7 @@
 
 基于 Fama–Bliss、Cochrane–Piazzesi 和 Ludvigson–Ng 的债券收益预测框架，构建 **CP＋宏观主成分＋价格趋势** 等权预测组合，在 2–5 年期零息国债篮子与短期国库券之间进行月度配置。
 
-本项目完成课程要求的 EH、FB、CP、LN 因子、样本内与样本外分析、多预测期限和经济价值评价。主策略使用历史宏观版本、滚动估计、现金约束和交易费用，代码同时提供原论文数值核验。研究结论是：**组合信号在这段历史上改善了债券配置的风险收益表现，价值主要体现在回撤控制；均值可预测性与收益增益的统计证据仍有限。**
+本项目完成课程要求的 EH、FB、CP、LN 因子、样本内与样本外分析、多预测期限和经济价值评价。主策略使用历史宏观版本、滚动估计、现金约束和交易费用，代码同时提供原论文数值核验，并在统一信息集上比较 ElasticNet、XGBoost、Gaussian Copula、分期限配置和融资方案。研究结论是：**简单的分散线性信号比经过调参的复杂模型更稳定；策略价值主要体现在控制回撤，均值可预测性与收益增益的统计证据仍有限。**
 
 ## 结果
 
@@ -88,6 +88,24 @@ $$
 
 等权组合降低对某个因子或估计权重的依赖。[单因子与组合消融表](results/performance.csv)同时展示 FB、CP、LN6、Macro8、Trend12、三种两两组合，以及三类信息的组合；研究不以某个单独模型的最高历史夏普作为证明。
 
+### 非线性模型与分期限配置
+
+复杂模型使用与主策略相同的信息时点和 120 个月成熟训练窗。每个训练折独立执行缺失率筛选、填补、标准化和宏观 PCA；Gaussian Copula 只增加训练行，合成数据不进入验证或评价。Optuna 在 2000–2006 年按季度抽取的因果折上搜索：每个 ElasticNet 家族 32 次、每个 XGBoost 家族 64 次，共 192 次。2007–2012 年只用于冻结模型家族和相对 EH 的收缩系数，2013 年以后不参与选择。
+
+| 模型 | 2007–2012 相对 EH 损失 | 冻结收缩 | 2013–2026 CAGR | 超额夏普 | 篮子 OOS R² |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| EW3 线性组合 | — | 0.50（固定） | **2.06%** | **0.22** | **0.32%** |
+| ElasticNet | 1.000 | 1.00 | 1.55% | -0.04 | 0.00% |
+| ElasticNet + GC | 1.000 | 0.00 | 1.55% | -0.04 | 0.00% |
+| XGBoost | 1.036 | 0.00 | 1.55% | -0.04 | 0.00% |
+| XGBoost + GC | 1.108 | 0.00 | 1.55% | -0.04 | 0.00% |
+
+损失比小于 1 才代表优于同一折的历史均值。XGBoost 在最早调参段的最佳损失为 0.926，XGBoost+GC 为 0.907，但两者在随后选择段失效，因此验证规则将信号收缩为零。复杂模型没有被测试期收益替换或重新调参。完整试验、冻结参数和评价分别见 [搜索记录](results/nonlinear_search.csv)、[选择结果](results/nonlinear_selection.csv)、[预测评价](results/model_forecast_scores.csv)和[投资评价](results/model_performance.csv)。
+
+![冻结后的线性与非线性模型比较](assets/model_comparison.png)
+
+同一 EW3 信号还比较了按期限配置。预先用 2013 年以前已经结算的账户按 CER 选择后，正预测比例加权方案被选中；它把全样本 CAGR 从 3.77% 提高到 **3.93%**，但夏普从 0.693 降至 0.681，最大回撤从 -3.82% 扩大到 -4.57%。2013 年后的 CAGR 为 2.11%，略高于等期限权重的 2.06%。因此它作为**收益增强版本**保留，风险控制主结果仍采用等期限权重。协方差均值—方差和杠杆期限轮动没有稳定改善后段表现，完整结果见[期限配置比较](results/maturity_allocation.csv)。
+
 ### 滚动估计与信息可得性
 
 每个预测月重新估计模型，使用最近 **120 个已成熟标签**。建仓月为 $s$、持有期为 $h$ 的标签仅在 $s+h<t$ 时进入月份 $t$ 的训练集，明确留出一个月的保守间隔。窗口按日历月计算，缺失月份不会被当作相邻月份。
@@ -156,6 +174,8 @@ Handbook 包是更新后的 **131 列宏观面板**，与 RFS 原始 132 序列�
 | γ 与杠杆上限是否事后挑选？ | 主设定 γ=5、上限 1；324 组联合网格、2013 年冻结选择、逐年滚动选择及家族 max-t 修正均单独报告。另用同一账本披露 108 组只做多/多空、γ、上限和融资成本组合，事后最优不替代固定主设定：[参数网格](results/parameter_grid.csv)、[融资与卖空网格](results/financing_grid.csv)、[因果选择结果](results/selection_performance.csv)、[家族检验](results/parameter_family_tests.csv) |
 | 宏观数据是否按可得时点处理？ | 对每月历史版本、最新参考月和 lag 1/2/3 的可用序列数逐月审计，并在相同日历比较更早与更宽松信息集：[宏观时点](results/macro_information.csv)、[假设对照](results/assumption_performance.csv) |
 | 成本与同收盘交易是否影响结论？ | 双边各 0/0.5/2/5 bp、信号延迟一个月；延迟检验保持相同起止月份：[敏感性](results/sensitivity.csv) |
+| 非线性模型是否只是没有调好？ | 192 次分阶段 Optuna 搜索覆盖 ElasticNet、XGBoost、GC、曲线/宏观表示和主要正则参数；调参、选模、评价三个时期分离：[搜索记录](results/nonlinear_search.csv)、[冻结选择](results/nonlinear_selection.csv)、[投资结果](results/model_performance.csv) |
+| 分期限预测和均值—方差配置是否更好？ | 比较等期限、预测比例、风险调整、协方差多头及 2/3 倍多空配置；只用 2013 年以前结果选择多头配置，再单列 2013 年后结果：[期限配置](results/maturity_allocation.csv) |
 | 是否真正改善预测？ | 1/3/12 月篮子及各期限 R²_OOS、HAC 损失差；同一评价样本另分解历史均值 SSE、中心化 TSS 和事后校准上限：[实际收缩预测](results/forecast_scores.csv)、[R² 分解](results/r2_accounting.csv) |
 | 投资价值是否显著？ | 26 个不重叠年度账户计算 CER；3 年区块重采样给出差值区间；对披露的模型族提供共同区块 max-t 检验：[年度效用](results/annual_utility.csv)、[CER 区间](results/cer_intervals.csv)、[主动收益检验](results/active_return_tests.csv) |
 
@@ -166,6 +186,8 @@ Handbook 包是更新后的 **131 列宏观面板**，与 RFS 原始 132 序列�
 ## 结论与局限
 
 - 在所用历史数据与费用假设下，三类信息的组合产生正的扣费收益，收益与回撤指标优于同期限被动持有及历史均值择时；这是一个有经济解释且可重跑的课程策略。
+- 预验证选择的期限倾斜把全样本 CAGR 提高到 3.93%，但回撤和夏普略弱；它适合强调收益的扩展，不替代风险控制主规格。
+- 更复杂的 ElasticNet、XGBoost 和 Gaussian Copula 在早期调参期有局部预测增益，却没有通过后续冻结选择期；增加模型复杂度没有带来可保留的投资改进。
 - 主要价值来自减少部分不利时期的债券暴露，无法据此推出普遍、稳定的方向预测能力。2020 年以后的超额夏普仍为负；更高 γ 或不同训练窗也不会在所有指标上同时改善。
 - 统计区间包含零，且存在回溯选模风险。完整的独立前瞻检验仍需冻结代码、数据发布时间规则和交易规则后积累新样本。
 - GSW 是拟合的零息曲线，不是可直接按模型价格成交的具体证券；没有逐券买卖价差、税费和真实执行数据。成本敏感性和一个月延迟仅部分刻画这些问题。
@@ -189,7 +211,7 @@ Handbook 包是更新后的 **131 列宏观面板**，与 RFS 原始 132 序列�
 使用 Python 3.11 或更高版本；科学计算库与绘图库已锁定为生成发布结果时的版本：
 
 ```bash
-uv sync --extra report
+uv sync --extra report --extra research
 uv run python scripts/fetch_data.py
 uv run python scripts/fetch_data.py --verify
 uv run python scripts/replicate_literature.py
@@ -207,7 +229,8 @@ bond_rp/
   data.py, market.py        数据变换、收益率曲线与到期日对齐
   models.py, factors.py     训练窗预处理、共享 CP/LN 指数估计
   forecasting.py           历史版本递归预测与多期限标签
-  portfolio.py             完全融资的月度现金账本
+  portfolio.py             多期限、融资和卖空的月度现金账本
+  nonlinear.py             ElasticNet/XGBoost/GC 分阶段选择
   evaluation.py, inference.py, validation.py  预测、经济价值、选择与稳健性检验
   replication.py           原论文数值核验
   reporting.py             结果表与研究图

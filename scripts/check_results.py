@@ -110,6 +110,31 @@ def main():
     assert np.isclose(best_cost_cagr.cagr_pct,cost.cagr_pct.max())
     assert np.isclose(best_cost_sharpe.sharpe,cost.sharpe.max())
 
+    # Nonlinear learners are tuned before 2007, selected and shrunk before
+    # 2013, then evaluated on the common 2013+ account calendar.
+    nonlinear_search=pd.read_csv(out/"nonlinear_search.csv")
+    assert len(nonlinear_search)==192 and nonlinear_search.family.nunique()==4
+    assert nonlinear_search.groupby("family").selected.sum().eq(1).all()
+    nonlinear_selection=pd.read_csv(out/"nonlinear_selection.csv")
+    assert len(nonlinear_selection)==4 and nonlinear_selection.family_winner.sum()==1
+    assert nonlinear_selection.accepted.sum() in (0,1)
+    assert nonlinear_selection.shrinkage.between(0,1).all()
+    model_performance=pd.read_csv(out/"model_performance.csv")
+    assert model_performance.model.nunique()==5
+    assert set(model_performance.period)=={"selection_2007_2012","holdout_2013_2026","full_2000_2026"}
+    assert model_performance.groupby("model").months.sum().gt(0).all()
+    model_scores=pd.read_csv(out/"model_forecast_scores.csv")
+    assert len(model_scores)==50 and model_scores.model.nunique()==5
+    assert set(model_scores.period)=={"selection_2007_2012","holdout_2013_2026"}
+    protocol=json.loads((out/"nonlinear_protocol.json").read_text())
+    assert protocol["evaluation"].startswith("2013-01")
+
+    maturity=pd.read_csv(out/"maturity_allocation.csv")
+    assert maturity.policy.nunique()==7 and len(maturity)==21
+    long=maturity.loc[maturity.policy_group.eq("long_only")]
+    assert long.groupby("period").selected_before_2013.sum().eq(1).all()
+    assert set(maturity.period)=={"validation_2000_2012","holdout_2013_2026","full_2000_2026"}
+
     # Historical monthly-vintage coverage is auditable month by month.  File
     # labels and reference dates are separate; the t-1 file's latest populated
     # reference is normally t-2, which is the information used by the strategy.

@@ -7,7 +7,7 @@ from itertools import product
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LinearRegression
-from .portfolio import performance, risk_information, basket_account, simulate
+from .portfolio import performance, risk_information, basket_account, multi_asset_account, simulate
 from .forecasting import target_columns
 from .inference import joint_block_bootstrap_t
 from .vintages import VintageArchive
@@ -239,6 +239,76 @@ def financing_grid(market,forecasts):
     return grid,pd.DataFrame(chosen)
 
 
+def maturity_allocation_study(market,forecasts,cutoff="2013-01"):
+    """Compare equal maturity weights with causal term-structure allocations."""
+    p=forecasts.loc[forecasts.horizon.eq(1)&forecasts.window.astype(str).eq("120")&
+                       forecasts.model.isin(["EH","EW3"])].copy()
+    p["ym"]=pd.PeriodIndex(p.ym,freq="M")
+    pred={name:g.set_index("ym")[[f"mu{n}" for n in range(2,6)]]/100
+          for name,g in p.groupby("model")}
+    dates=market.dropna(subset=[f"mr{n}" for n in range(2,6)]+["rf_month"]).loc["2000-01":"2026-01"].index
+    dates=dates.intersection(pred["EH"].index).intersection(pred["EW3"].index)
+    mu=(pred["EH"].loc[dates]+.5*(pred["EW3"].loc[dates]-pred["EH"].loc[dates])).to_numpy()
+    actual=market.loc[dates,[f"mr{n}" for n in range(2,6)]].to_numpy()/100
+    rf=market.rf_month.reindex(dates).to_numpy()/100
+    covariances=[]
+    for date in dates:
+        past=market.loc[(market.index+1<=date-1)&(market.index>=date-61),
+                        [f"mx{n}" for n in range(2,6)]].dropna().to_numpy()/100
+        if len(past)<36:
+            raise ValueError("Insufficient matured covariance history")
+        covariances.append(np.cov(past,rowvar=False,ddof=1))
+    covariances=np.asarray(covariances)
+    basket_variance=np.maximum(covariances.mean(axis=(1,2)),1e-10)
+    total=np.clip(mu.mean(axis=1)/(5*basket_variance),0,1)
+    equal=np.repeat((total/4)[:,None],4,axis=1)
+    positive=np.maximum(mu,0)
+    shares=np.divide(positive,positive.sum(axis=1)[:,None],
+                     out=np.full_like(positive,.25),where=positive.sum(axis=1)[:,None]>0)
+    forecast_weighted=total[:,None]*shares
+    inverse=np.maximum(mu,0)/np.maximum(np.diagonal(covariances,axis1=1,axis2=2),1e-10)
+    inverse=np.divide(inverse,inverse.sum(axis=1)[:,None],out=np.full_like(inverse,.25),
+                      where=inverse.sum(axis=1)[:,None]>0)
+    risk_adjusted=total[:,None]*inverse
+    long_mv=[];ls2=[];ls3=[]
+    for expected,covariance in zip(mu,covariances):
+        shrunk=.1*covariance+.9*np.diag(np.diag(covariance))
+        shrunk+=np.eye(4)*np.trace(shrunk)/4*1e-6
+        raw=np.linalg.solve(5*shrunk,expected)
+        long=np.maximum(raw,0);long*=min(1,1/max(long.sum(),1e-15))
+        long_mv.append(long)
+        for cap,target in ((2,ls2),(3,ls3)):
+            target.append(raw*min(1,cap/max(np.abs(raw).sum(),1e-15)))
+    policies={"equal_maturity":(equal,50.,25.,"long_only"),
+              "forecast_weighted":(forecast_weighted,50.,25.,"long_only"),
+              "risk_adjusted_weighted":(risk_adjusted,50.,25.,"long_only"),
+              "covariance_mv_long":(np.asarray(long_mv),50.,25.,"long_only"),
+              "covariance_mv_ls_cap2":(np.asarray(ls2),50.,25.,"leveraged"),
+              "covariance_mv_ls_cap3":(np.asarray(ls3),50.,25.,"leveraged"),
+              "covariance_mv_ls_cap3_zero_finance":(np.asarray(ls3),0.,0.,"leveraged_gross")}
+    cutoff=pd.Period(cutoff,"M")
+    validation=dates+1<cutoff;later=dates>=cutoff
+    accounts={name:multi_asset_account(q,actual,rf,.5,borrow,short)
+              for name,(q,borrow,short,group) in policies.items()}
+    eligible=[name for name,values in policies.items() if values[3]=="long_only"]
+    utility={name:12*(accounts[name]["return_net"][validation].mean()
+                      -2.5*accounts[name]["return_net"][validation].var(ddof=1)) for name in eligible}
+    selected=max(eligible,key=utility.get)
+    rows=[]
+    for name,(q,borrow,short,group) in policies.items():
+        account=accounts[name]
+        for period,mask in (("validation_2000_2012",validation),("holdout_2013_2026",later),
+                            ("full_2000_2026",np.ones(len(dates),bool))):
+            stats=performance(account["return_net"][mask],rf[mask])
+            rows.append(dict(policy=name,policy_group=group,period=period,
+                             selected_before_2013=name==selected,selection_cutoff=str(cutoff),
+                             monthly_cer_pct=1200*(account["return_net"][mask].mean()
+                                 -2.5*account["return_net"][mask].var(ddof=1)),
+                             mean_absolute_exposure=account["absolute_exposure"][mask].mean(),
+                             borrowing_spread_bps=borrow,short_borrow_bps=short,**stats))
+    return pd.DataFrame(rows)
+
+
 def run_validation(market,macro,archival,horizons,revised,out,loader):
     path=out/"validation"
     path.mkdir(exist_ok=True)
@@ -251,6 +321,7 @@ def run_validation(market,macro,archival,horizons,revised,out,loader):
     finance,finance_summary=financing_grid(market,archival)
     finance.to_csv(out/"financing_grid.csv",index=False)
     finance_summary.to_csv(out/"financing_summary.csv",index=False)
+    maturity_allocation_study(market,archival).to_csv(out/"maturity_allocation.csv",index=False)
     macro_coverage().to_csv(out/"macro_information.csv",index=False)
     assumption_checks(market,macro,archival,revised,path,loader).to_csv(out/"assumption_performance.csv",index=False)
     pd.concat([r2_accounting(market,pd.concat([archival,horizons]),"archival"),

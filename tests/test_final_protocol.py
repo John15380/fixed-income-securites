@@ -12,7 +12,7 @@ from bond_rp.forecasting import training_sample, fit_forecasts
 from bond_rp.factors import common_index, ln6_terms
 from bond_rp.inference import mean_hac_t, block_bootstrap_t
 from bond_rp.vintages import VintageArchive, VINTAGE_URLS
-from bond_rp.portfolio import simulate, performance, basket_account
+from bond_rp.portfolio import simulate, performance, basket_account, multi_asset_account
 from bond_rp.validation import r2_components, choose_policy
 
 class ResearchProtocol(unittest.TestCase):
@@ -138,6 +138,18 @@ class ResearchProtocol(unittest.TestCase):
         np.testing.assert_allclose(account['return_net'],expected,atol=1e-14)
         self.assertEqual(account['financing'][0],0)
         self.assertAlmostEqual(account['short_fee'][0],.001)
+
+    def test_equal_maturity_ledger_matches_scalar_basket(self):
+        rng=np.random.default_rng(91)
+        weights=np.array([0.,.5,1.,2.,-1.])
+        assets=rng.normal(.003,.01,(len(weights),4));rf=np.full(len(weights),.002)
+        scalar=basket_account(weights,assets.mean(axis=1),rf,cost_bps=.5,
+                              borrow_spread_bps=50,short_borrow_bps=25)
+        vector=multi_asset_account(np.repeat((weights/4)[:,None],4,axis=1),assets,rf,
+                                   cost_bps=.5,borrow_spread_bps=50,short_borrow_bps=25)
+        for key in ('return_net','return_gross','cost','financing','short_fee',
+                    'gross_exposure','absolute_exposure','cash_after_entry'):
+            np.testing.assert_allclose(vector[key],scalar[key],atol=1e-14)
 
     def test_r2_decomposition_exposes_a_weak_mean_benchmark(self):
         y=np.array([-1.,1.,-1.,1.])

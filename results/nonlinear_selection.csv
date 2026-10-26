@@ -1,0 +1,5 @@
+family,selection_loss,shrinkage,selected,configuration,family_winner,accepted
+ElasticNet,1.0,1.0,False,"{""alpha"": 0.847180141881998, ""gc_ratio"": 0.0, ""l1_ratio"": 0.6187255599871847, ""representation"": ""curve_macro""}",True,False
+ElasticNet_GC,1.0003624688823676,0.0,False,"{""alpha"": 4.253184958665759, ""gc_ratio"": 0.5, ""l1_ratio"": 0.8195389417195303, ""representation"": ""curve_macro""}",False,False
+XGBoost,1.035981543822971,0.0,False,"{""colsample_bytree"": 0.9355441841663479, ""gc_ratio"": 0.0, ""learning_rate"": 0.018416971320749737, ""max_depth"": 3, ""min_child_weight"": 3.135495983871728, ""n_estimators"": 175, ""reg_alpha"": 1.3023306650934355e-05, ""reg_lambda"": 61.934402304305664, ""representation"": ""curve_macro"", ""subsample"": 0.6197088526439424}",False,False
+XGBoost_GC,1.1084683806383548,0.0,False,"{""colsample_bytree"": 0.9983518431108216, ""gc_ratio"": 1.0, ""learning_rate"": 0.017649672201296263, ""max_depth"": 1, ""min_child_weight"": 2.71338515842953, ""n_estimators"": 150, ""reg_alpha"": 5.061919551169656e-06, ""reg_lambda"": 0.41896113682747715, ""representation"": ""curve"", ""subsample"": 0.8040882427403995}",False,False

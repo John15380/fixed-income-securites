@@ -16,6 +16,8 @@ import pandas as pd
 import sklearn
 import scipy
 import statsmodels
+import optuna
+import xgboost
 from bond_rp.config import DATA_DIR, DEFAULT
 from bond_rp.data import load_macro_raw_transformed
 from bond_rp.market import load_monthly_market
@@ -85,6 +87,11 @@ def main():
     in_sample_scores(market,macro).to_csv(out/"in_sample.csv",index=False)
     in_sample_coefficients(market,macro).to_csv(out/"in_sample_coefficients.csv",index=False)
     sensitivity(market,p,DEFAULT.start,DEFAULT.end).to_csv(out/"sensitivity.csv",index=False)
+    print("Tuning ElasticNet/XGBoost and Gaussian-copula variants",flush=True)
+    from bond_rp.nonlinear import run_nonlinear_study
+    with VintageArchive(DATA_DIR) as research_archive:
+        nonlinear_performance,nonlinear_scores,nonlinear_selection,nonlinear_winner = \
+            run_nonlinear_study(market,research_archive,p,out)
     annual,accounts,tests,intervals=economic_inference(trades)
     for name,frame in [("annual_utility",annual),("annual_accounts",accounts),
                        ("active_return_tests",tests),("cer_intervals",intervals)]:
@@ -108,7 +115,8 @@ def main():
     manifest=dict(strategy=DEFAULT.to_dict(),inputs_sha256=sources,
                   source_sha256={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in source_paths},
                   python=platform.python_version(),numpy=np.__version__,pandas=pd.__version__,sklearn=sklearn.__version__,
-                  scipy=scipy.__version__,statsmodels=statsmodels.__version__,
+                  scipy=scipy.__version__,statsmodels=statsmodels.__version__,optuna=optuna.__version__,
+                  xgboost=xgboost.__version__,nonlinear_selected_family=nonlinear_winner,
                   paper_checks=int(len(checks)),paper_checks_passed=bool(checks.passed.all()),
                   interpretation="Retrospective research; historical monthly macro vintages, not certified daily real-time execution")
     (out/"manifest.json").write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+"\n")

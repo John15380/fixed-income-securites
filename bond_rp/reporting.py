@@ -29,7 +29,8 @@ def export_report(out,root):
                  "subperiods","forecast_scores","raw_forecast_scores","in_sample","in_sample_coefficients","annual_utility",
                  "active_return_tests","cer_intervals","revised_origins","parameter_grid",
                  "selection_schedule","selection_performance","parameter_family_tests",
-                 "factor_validation","macro_information","assumption_performance","r2_accounting","published_cells"):
+                 "factor_validation","financing_grid","financing_summary","macro_information",
+                 "assumption_performance","r2_accounting","published_cells"):
         shutil.copyfile(out/(name+".csv"),results/(name+".csv"))
     shutil.copyfile(out/"manifest.json",results/"data_manifest.json")
     trades=pd.read_csv(out/"monthly_accounts.csv")
@@ -88,10 +89,40 @@ def export_report(out,root):
     ew=stats.loc["EW3"];bh=stats.loc["BuyHold"]
     checks=pd.read_csv(out/"paper_checks.csv")
     cells=pd.read_csv(out/"published_cells.csv")
+    financed=pd.read_csv(out/"financing_summary.csv")
+    no_financing=financed.borrowing_months.eq(0)
+    no_short=financed.short_months.eq(0)
+    financed.loc[no_financing,"borrowing_spread_bps"]=np.nan
+    financed.loc[no_short,"short_borrow_bps"]=np.nan
+    labels={"unlevered_long_only":"固定 γ=5，w∈[0,1]",
+        "financed_long_short_cap2":"固定 γ=5，w∈[-2,2]",
+        "financed_long_short_cap3":"固定 γ=5，w∈[-3,3]",
+        "cost_grid_best_cagr":"计成本网格最高 CAGR（事后）",
+        "cost_grid_best_sharpe":"计成本网格最高夏普（事后）",
+        "grid_best_cagr":"全网格最高 CAGR（事后）",
+        "grid_best_sharpe":"全网格最高夏普（事后）"}
+    best=financed.label.str.contains("best")
+    financed.loc[~best,"label"]=financed.loc[~best,"label"].map(labels)
+    financed.loc[best,"label"]=[
+        f"{labels[r.label]}：γ={r.gamma:g}，w∈[{r.lower_bound:g},{r.upper_bound:g}]"
+        for r in financed.loc[best].itertuples()]
+    financed=financed[["label","cagr_pct","sharpe","vol_pct","max_dd_pct",
+                       "mean_absolute_exposure","borrowing_months","short_months",
+                       "borrowing_spread_bps","short_borrow_bps"]]
+    financed.columns=["配置","CAGR","超额夏普","年化波动","最大回撤","平均绝对敞口",
+                      "借款月份","做空月份","借款利差(bp)","卖空费(bp)"]
+    financed_table=md_table(financed,{"CAGR":"{:.2f}%","超额夏普":"{:.2f}","年化波动":"{:.2f}%",
+        "最大回撤":"{:.2f}%","平均绝对敞口":"{:.2f}","借款利差(bp)":"{:.0f}","卖空费(bp)":"{:.0f}"})
     block=f'''<!-- RESULTS -->
 建仓月份为 **2000-01 至 2026-01**，最后卖出月份为 **2026-02**，共 {int(ew.months)} 个连续月度账户。下表为历史宏观版本主实验；债券买卖双边各扣 0.5 bp，所有策略使用相同现金账户和交易规则。
 
 {table}
+
+融资和卖空扩展使用同一预测、同一月份、同一双边费用账本；负仓位的卖空所得留在现金账户，正向杠杆按国库券收益加借款利差融资，并对空头名义本金另收卖空费：
+
+{financed_table}
+
+“计成本网格”固定借款利差 50 bp，并在允许做空时固定卖空费 25 bp，再比较 18 组方向约束、γ 和上限；“全网格”比较全部 108 组并允许零融资成本。两类最高值均为事后敏感性结果，不能冒充独立验证成绩。固定 γ=5 的两行没有按回测表现选择 γ。
 
 组合策略期末净值为初始资金的 **{ew.terminal_wealth:.2f} 倍**。相对持有债券，CAGR 提高 **{ew.cagr_pct-bh.cagr_pct:.2f} 个百分点**，最大回撤绝对值降低 **{100*(1-abs(ew.max_dd_pct)/abs(bh.max_dd_pct)):.1f}%**。夏普用扣费收益减同月国库券收益计算；CAGR 是总收益，二者口径不同。
 

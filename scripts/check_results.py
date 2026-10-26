@@ -86,6 +86,29 @@ def main():
     assert factor.groupby("period").selected_before_cutoff.sum().eq(1).all()
     assert factor.last_validation_sale.lt(factor.selection_cutoff).all()
     assert factor.validation_months.ge(60).all()
+    finance=pd.read_csv(out/"financing_grid.csv")
+    assert len(finance)==108 and set(finance.direction)=={"long_only","long_short"}
+    assert set(finance.gamma)=={2.,5.,10.} and set(finance.upper_bound)=={1.,2.,3.}
+    assert set(finance.borrowing_spread_bps)=={0.,50.,200.}
+    assert finance.months.eq(313).all() and finance.start.eq("2000-01").all()
+    assert finance.borrowing_months.ge(0).all() and finance.borrowing_months.le(313).all()
+    long=finance.loc[finance.direction.eq("long_only")]
+    assert long.short_months.eq(0).all() and long.lower_bound.eq(0).all()
+    short=finance.loc[finance.direction.eq("long_short")]
+    assert short.short_months.gt(0).all() and short.lower_bound.lt(0).all()
+    summary=pd.read_csv(out/"financing_summary.csv")
+    assert set(summary.label)=={"unlevered_long_only","financed_long_short_cap2",
+        "financed_long_short_cap3","cost_grid_best_cagr","cost_grid_best_sharpe",
+        "grid_best_cagr","grid_best_sharpe"}
+    assert summary.loc[summary.label.eq("grid_best_cagr"),"rank_cagr"].iat[0]==1
+    assert summary.loc[summary.label.eq("grid_best_sharpe"),"rank_sharpe"].iat[0]==1
+    cost=finance.loc[(finance.borrowing_spread_bps==50)&(
+        ((finance.direction=="long_only")&(finance.short_borrow_bps==0))|
+        ((finance.direction=="long_short")&(finance.short_borrow_bps==25)))]
+    best_cost_cagr=summary.loc[summary.label.eq("cost_grid_best_cagr")].iloc[0]
+    best_cost_sharpe=summary.loc[summary.label.eq("cost_grid_best_sharpe")].iloc[0]
+    assert np.isclose(best_cost_cagr.cagr_pct,cost.cagr_pct.max())
+    assert np.isclose(best_cost_sharpe.sharpe,cost.sharpe.max())
 
     # Historical monthly-vintage coverage is auditable month by month.  File
     # labels and reference dates are separate; the t-1 file's latest populated
@@ -132,7 +155,7 @@ def main():
     assert (mismatch.difference.abs()>mismatch.printing_tolerance).all()
     print(f"Verified {len(trades)} monthly account rows; max independent replay error {max_error:.3g}")
     print(f"Verified {n} forecast training/vintage audit rows and {len(checks)} paper checks")
-    print(f"Verified 324 parameter cells, {len(schedule)} causal selections, 9 factor candidates and {len(accounting)} R2 identities")
+    print(f"Verified 324 parameter cells, {len(schedule)} causal selections, 9 factor candidates, 108 financing policies and {len(accounting)} R2 identities")
     print(f"Published-table cell coverage: {int(cells.matches_printing.sum())}/{len(cells)} match printed precision")
     print("Input and source SHA-256 fingerprints match the completed run")
 

@@ -190,6 +190,55 @@ def assumption_checks(market,macro,archival,revised,out,loader):
     return pd.concat(rows,ignore_index=True)
 
 
+def financing_grid(market,forecasts):
+    """Disclosed long/short and borrowing grid; no row silently replaces the base."""
+    core=forecasts.loc[forecasts.horizon.eq(1)&forecasts.window.astype(str).eq("120")&
+                       forecasts.model.isin(["EH","EW3"])]
+    rows=[]
+    for gamma,cap,borrow in product((2.,5.,10.),(1.,2.,3.),(0.,50.,200.)):
+        settings=[("long_only",0.,0.)]
+        settings += [("long_short",-cap,short) for short in (0.,25.,100.)]
+        for direction,floor,short in settings:
+            stat,trades=simulate(market,core,start="2000-01",end="2026-01",gamma=gamma,cap=cap,
+                                 floor=floor,borrow_spread_bps=borrow,short_borrow_bps=short)
+            row=stat.loc[stat.model.eq("EW3")].iloc[0].to_dict()
+            ledger=trades.loc[trades.model.eq("EW3")]
+            row.update(direction=direction,gamma=gamma,lower_bound=floor,upper_bound=cap,
+                       borrowing_spread_bps=borrow,short_borrow_bps=short,
+                       borrowing_months=int((ledger.cash_after_entry<0).sum()),
+                       total_financing_cost_pct=100*ledger.financing.sum(),
+                       total_short_fees_pct=100*ledger.short_fee.sum())
+            rows.append(row)
+    grid=pd.DataFrame(rows)
+    grid["rank_cagr"]=grid.cagr_pct.rank(method="min",ascending=False).astype(int)
+    grid["rank_sharpe"]=grid.sharpe.rank(method="min",ascending=False).astype(int)
+    grid["rank_drawdown"]=grid.max_dd_pct.rank(method="min",ascending=False).astype(int)
+    chosen=[]
+    def add(label,row,selection):
+        item=row.to_dict();item.update(label=label,selection_basis=selection);chosen.append(item)
+    base=grid.loc[(grid.direction=="long_only")&(grid.gamma==5)&(grid.upper_bound==1)&
+                  (grid.borrowing_spread_bps==50)].iloc[0]
+    moderate=grid.loc[(grid.direction=="long_short")&(grid.gamma==5)&(grid.upper_bound==2)&
+                      (grid.borrowing_spread_bps==50)&(grid.short_borrow_bps==25)].iloc[0]
+    aggressive=grid.loc[(grid.direction=="long_short")&(grid.gamma==5)&(grid.upper_bound==3)&
+                        (grid.borrowing_spread_bps==50)&(grid.short_borrow_bps==25)].iloc[0]
+    add("unlevered_long_only",base,"fixed reference")
+    add("financed_long_short_cap2",moderate,"fixed economic comparison")
+    add("financed_long_short_cap3",aggressive,"fixed economic comparison")
+    cost_grid=grid.loc[(grid.borrowing_spread_bps==50)&(
+        ((grid.direction=="long_only")&(grid.short_borrow_bps==0))|
+        ((grid.direction=="long_short")&(grid.short_borrow_bps==25)))]
+    add("cost_grid_best_cagr",cost_grid.sort_values(
+        ["cagr_pct","sharpe"],ascending=False).iloc[0],
+        "ex post over 18-policy cost-controlled grid")
+    add("cost_grid_best_sharpe",cost_grid.sort_values(
+        ["sharpe","cagr_pct"],ascending=False).iloc[0],
+        "ex post over 18-policy cost-controlled grid")
+    add("grid_best_cagr",grid.sort_values(["cagr_pct","sharpe"],ascending=False).iloc[0],"ex post over disclosed grid")
+    add("grid_best_sharpe",grid.sort_values(["sharpe","cagr_pct"],ascending=False).iloc[0],"ex post over disclosed grid")
+    return grid,pd.DataFrame(chosen)
+
+
 def run_validation(market,macro,archival,horizons,revised,out,loader):
     path=out/"validation"
     path.mkdir(exist_ok=True)
@@ -199,6 +248,9 @@ def run_validation(market,macro,archival,horizons,revised,out,loader):
     selection.to_csv(out/"selection_performance.csv",index=False)
     family.to_csv(out/"parameter_family_tests.csv",index=False)
     factor_selection(market,archival).to_csv(out/"factor_validation.csv",index=False)
+    finance,finance_summary=financing_grid(market,archival)
+    finance.to_csv(out/"financing_grid.csv",index=False)
+    finance_summary.to_csv(out/"financing_summary.csv",index=False)
     macro_coverage().to_csv(out/"macro_information.csv",index=False)
     assumption_checks(market,macro,archival,revised,path,loader).to_csv(out/"assumption_performance.csv",index=False)
     pd.concat([r2_accounting(market,pd.concat([archival,horizons]),"archival"),

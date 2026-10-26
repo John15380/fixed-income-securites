@@ -129,6 +129,16 @@ class ResearchProtocol(unittest.TestCase):
         self.assertEqual(account['financing'][0],0)
         self.assertAlmostEqual(account['financing'][2],1.001*.001)
 
+    def test_short_sale_cash_fees_and_borrow_charge(self):
+        w=np.array([-1.])
+        r=np.array([.01]);rf=np.array([.002]);c=5/10000
+        account=basket_account(w,r,rf,cost_bps=5,borrow_spread_bps=120,short_borrow_bps=120)
+        cash=1-w-c*abs(w)
+        expected=cash*(1+rf)+w*(1+r)-c*abs(w)*(1+r)-abs(w)*.001-1
+        np.testing.assert_allclose(account['return_net'],expected,atol=1e-14)
+        self.assertEqual(account['financing'][0],0)
+        self.assertAlmostEqual(account['short_fee'][0],.001)
+
     def test_r2_decomposition_exposes_a_weak_mean_benchmark(self):
         y=np.array([-1.,1.,-1.,1.])
         p=np.zeros(4);b=np.full(4,3.)

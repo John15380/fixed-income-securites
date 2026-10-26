@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .config import DATA_DIR, HORIZON_MONTHS, MATS, TI_LOOKBACK, TRANSFORM
+from .config import DATA_DIR, HORIZON_MONTHS, MATS, TI_LOOKBACK
 
 
 def apply_transform(series: pd.Series, code: int) -> pd.Series:
@@ -52,11 +52,13 @@ def bond_variables(log_prices: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_bond_data() -> pd.DataFrame:
-    raw = pd.read_csv(Path(DATA_DIR) / "Fama_Bliss_price.txt", sep=r"\s+", comment="%",
-                      names=["date", "p1", "p2", "p3", "p4", "p5"])
+    """CP authors' publicly released CRSP-derived original price archive."""
+    import zipfile
+    with zipfile.ZipFile(Path(DATA_DIR)/"CP2005_replication.zip") as z:
+        raw = pd.read_csv(z.open("cp/bondprice.dat"), sep=r"\s+", comment="%",
+                          names=["date", "p1", "p2", "p3", "p4", "p5"])
     dates = pd.to_datetime(raw["date"], format="%Y%m%d").dt.to_period("M")
-    prices = pd.DataFrame({f"lp{n}": 100 * np.log(raw[f"p{n}"] / 100)
-                           for n in range(1, 6)})
+    prices = pd.DataFrame({f"lp{n}": 100*np.log(raw[f"p{n}"]/100) for n in range(1,6)})
     prices.index = dates
     return bond_variables(prices).reset_index()
 
@@ -73,33 +75,7 @@ def load_gsw_bond_data() -> pd.DataFrame:
     return bond_variables(lp).reset_index()
 
 
-def load_macro_raw_transformed(source: str = "jln") -> pd.DataFrame:
-    """Transform each series; leave imputation, scaling and PCA to training folds."""
-    if source == "jln":
-        raw = pd.read_excel(Path(DATA_DIR) / "macro_raw_data.xlsx", sheet_name="macrodata")
-        dates = pd.to_datetime(dict(year=raw["year"], month=raw["month"], day=1))
-        codes = {c: TRANSFORM[c] for c in raw if c in TRANSFORM}
-    elif source == "fredmd":
-        raw = pd.read_csv(Path(DATA_DIR) / "2026-04-MD.csv")
-        codes = {c: int(float(raw.iloc[0][c])) for c in raw if c != "sasdate"}
-        raw = raw.iloc[1:].reset_index(drop=True)
-        dates = pd.to_datetime(raw["sasdate"])
-    else:
-        raise ValueError(f"Unknown macro source: {source}")
-    raw = raw.copy()
-    raw.index = pd.PeriodIndex(dates, freq="M")
-    if raw.index.has_duplicates or not raw.index.is_monotonic_increasing:
-        raise ValueError("Macro months must be unique and ordered")
-    raw = raw.reindex(pd.period_range(raw.index.min(), raw.index.max(), freq="M"))
-    return pd.DataFrame({c: apply_transform(raw[c], code) for c, code in codes.items()})
-
-
-def load_sentiment() -> pd.DataFrame:
-    """Use SENT levels and their square; no unsupported changes-in-sentiment proxy."""
-    raw = pd.read_excel(Path(DATA_DIR) / "SENTIMENT.xlsx", sheet_name="DATA")
-    dates = pd.to_datetime(raw["yearmo"].astype(int).astype(str), format="%Y%m").dt.to_period("M")
-    values = pd.to_numeric(raw["SENT"], errors="coerce").to_numpy()
-    frame = pd.DataFrame({"SENT": values, "SENT_SQ": values ** 2}, index=dates)
-    if frame.index.has_duplicates:
-        raise ValueError("Duplicate sentiment months")
-    return frame.sort_index()
+def load_macro_raw_transformed() -> pd.DataFrame:
+    """Pinned revised FRED-MD panel, used only in labeled sensitivity analyses."""
+    from .vintages import transform_fred_csv
+    return transform_fred_csv(Path(DATA_DIR)/"2026-04-MD.csv")

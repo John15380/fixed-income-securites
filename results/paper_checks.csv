@@ -1,0 +1,46 @@
+check,error,tolerance,passed
+raw calendar returns vs production,2.4868995751603507e-14,1e-10,True
+FB CP05 R2 maturity 2,0.0021723481808658407,0.006,True
+FB CP05 slope maturity 2,0.0031790400761074755,0.01,True
+FB CP05 R2 maturity 3,0.0037324526009765713,0.006,True
+FB CP05 slope maturity 3,0.0011650420517099747,0.01,True
+FB CP05 R2 maturity 4,0.0038390903878870453,0.006,True
+FB CP05 slope maturity 4,0.0022624019408417073,0.01,True
+FB CP05 R2 maturity 5,0.005106267788188706,0.006,True
+FB CP05 slope maturity 5,0.0018539723763075777,0.01,True
+CP shared estimator vs independent restricted OLS,7.904787935331115e-13,1e-09,True
+CP05 published R2 maturity 2,0.00010743715047606406,0.006,True
+CP05 published R2 maturity 3,0.0035911344178329307,0.006,True
+CP05 published R2 maturity 4,3.503312685870785e-05,0.006,True
+CP05 published R2 maturity 5,0.0034108091086480496,0.006,True
+CP05 published coefficient constant,0.003813278272713383,0.0051,True
+CP05 published coefficient f1,0.0047462540698450795,0.0051,True
+CP05 published coefficient f2,0.001681622904633251,0.0051,True
+CP05 published coefficient f3,0.0006385661079786331,0.0051,True
+CP05 published coefficient f4,0.0012799917811993078,0.0051,True
+CP05 published coefficient f5,0.004292216918880598,0.0051,True
+LN5 reconstructed index vs released index RMSE,3.856669945569844e-05,0.001,True
+LN5 production vs independent OLS,3.552713678800501e-15,1e-09,True
+LN6 reconstructed index vs released index RMSE,4.1110116834104075e-05,0.001,True
+LN6 production vs independent OLS,7.105427357601002e-15,1e-09,True
+published LN09 CP maturity 2,0.002139737374417361,0.0051,True
+published LN09 CP maturity 3,0.004121285805809893,0.0051,True
+published LN09 CP maturity 4,0.0013146998888495798,0.0051,True
+published LN09 CP maturity 5,0.0033041104846041613,0.0051,True
+published LN09 LN5 released maturity 2,0.0006406543190896896,0.0051,True
+published LN09 LN5 released maturity 3,0.0030259849651211312,0.0051,True
+published LN09 LN5 released maturity 4,0.004583440127046673,0.0051,True
+published LN09 LN5 released maturity 5,0.0045738695053758605,0.0051,True
+published LN09 LN6 released maturity 2,0.0015820683447747008,0.0051,True
+published LN09 LN6 released maturity 3,0.003423050366627045,0.0051,True
+published LN09 LN6 released maturity 4,0.0007033852673317964,0.0051,True
+published LN09 LN6 released maturity 5,0.0014474657075110586,0.0051,True
+published LN09 CP+LN5 maturity 2,0.004298286011194141,0.0051,True
+published LN09 CP+LN5 maturity 3,9.870101490611072e-05,0.0051,True
+published LN09 CP+LN5 maturity 4,0.0031521785357643828,0.0051,True
+published LN09 CP+LN5 maturity 5,0.004968961843376196,0.0051,True
+published LN09 CP+five terms maturity 2,0.0021861794921440025,0.0051,True
+published LN09 CP+five terms maturity 3,0.0012823581540015172,0.0051,True
+published LN09 CP+five terms maturity 4,0.002321415236563651,0.0051,True
+published LN09 CP+five terms maturity 5,0.0037168596455544045,0.0051,True
+eight PCA factors vs author MATLAB scores up to sign,4.377609386096992e-13,1e-08,True

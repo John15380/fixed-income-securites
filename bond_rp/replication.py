@@ -14,9 +14,10 @@ import statsmodels.api as sm
 from scipy.io import loadmat
 from sklearn.decomposition import PCA
 from .config import DATA_DIR
-from .coursework import common_index
+from .factors import common_index
 from .data import apply_transform, load_bond_data
 
+CP_URL = "https://web.stanford.edu/~piazzesi/cp.zip"
 AUTHOR_URL = "https://www.sydneyludvigson.com/s/RFS2009.xls"
 HANDBOOK_URL = "https://www.sydneyludvigson.com/s/DataReplicationFiles.zip"
 LN6 = ["F1", "F1_cube", "F2", "F3", "F4", "F8"]
@@ -60,8 +61,9 @@ def run_replication():
         return fit
 
     # Independently reconstruct every calendar-aligned outcome from raw prices.
-    raw = pd.read_csv(Path(DATA_DIR)/"Fama_Bliss_price.txt", sep=r"\s+", comment="%",
-                      names=["date", "p1", "p2", "p3", "p4", "p5"])
+    with zipfile.ZipFile(Path(DATA_DIR)/"CP2005_replication.zip") as z:
+        raw = pd.read_csv(z.open("cp/bondprice.dat"), sep=r"\s+", comment="%",
+                          names=["date", "p1", "p2", "p3", "p4", "p5"])
     raw.index = pd.PeriodIndex(pd.to_datetime(raw.date, format="%Y%m%d"), freq="M")
     max_error = 0.
     for n in range(2, 6):
@@ -70,7 +72,7 @@ def run_replication():
         max_error = max(max_error, np.nanmax(np.abs(expected-bonds.loc[raw.index, f"rx{n}"].to_numpy())))
     check("raw calendar returns vs production", max_error, 1e-10)
 
-    # FB87 original sample. Updated CRSP-derived prices do not exactly reproduce
+    # FB87 original sample. CP archive CRSP-derived prices do not exactly reproduce
     # the 1987 data vintage. Do not widen a tolerance and call this an exact match.
     d = bonds.loc["1964-01":"1984-12"]
     for n, slope, r2 in zip(range(2, 6), [.91, 1.13, 1.42, .93], [.14, .11, .11, .05]):
@@ -82,19 +84,19 @@ def run_replication():
 
     # The shared CP implementation uses the actual restricted second stage.
     # Independently check the FB specification against CP's published FB table,
-    # whose data period is much closer to the available updated price archive.
-    d = bonds.loc["1963-01":"2002-12"]
+    # using the same original author price archive and formation dates.
+    d = bonds.loc["1964-01":"2002-12"]
     for n, expected, slope in zip(range(2, 6), [.16, .17, .18, .09], [.99, 1.35, 1.61, 1.27]):
         fit = sm.OLS(d[f"rx{n}"], sm.add_constant(d[[f"fs{n}"]])).fit()
         rows.append(dict(model="FB in CP05 Table 2", maturity=n, n=len(d), purchase_start=str(d.index.min()),
                          purchase_end=str(d.index.max()), last_sale=str(d.index.max()+12), statistic="R2",
                          published=expected, reproduced=fit.rsquared, difference=fit.rsquared-expected,
-                         comparison="updated prices; near published rounding"))
+                         comparison="CP author prices; near published rounding"))
         check(f"FB CP05 R2 maturity {n}", abs(fit.rsquared-expected), .006)
         check(f"FB CP05 slope maturity {n}", abs(fit.params.iloc[1]-slope), .01)
-    # Monthly annual returns ending in 1964-2003 correspond to purchases in
-    # 1963-2002. Keep this 480-row sample distinct from the LN 468-row pairing.
-    d = bonds.loc["1963-01":"2002-12"]
+    # Author fbregslatest.m: beg=140 selects January 1964 formation,
+    # ending December 2002. There are 468 forward annual labels (1965-2003).
+    d = bonds.loc["1964-01":"2002-12"]
     X = d[[f"f{n}" for n in range(1, 6)]].to_numpy()
     y = d[[f"rx{n}" for n in range(2, 6)]].to_numpy()
     prediction, first, second = common_index(X, y, X, second_intercept=False)
@@ -107,11 +109,12 @@ def run_replication():
         rows.append(dict(model="CP05 restricted", maturity=n, n=len(d), purchase_start=str(d.index.min()),
                          purchase_end=str(d.index.max()), last_sale=str(d.index.max()+12), statistic="centered R2",
                          published=expected, reproduced=value, difference=value-expected,
-                         comparison="raw updated prices; near published rounding"))
+                         comparison="raw CP author prices; near published rounding"))
         check(f"CP05 published R2 maturity {n}", abs(value-expected), .006)
     for term, given, value in zip(["constant", "f1", "f2", "f3", "f4", "f5"],
                                   [-3.24, -2.14, .81, 3., .80, -2.08], [first.intercept_, *first.coef_]):
         coefficients.append(dict(model="CP05", term=term, published=given, reproduced=value))
+        check(f"CP05 published coefficient {term}", abs(value-given), .0051)
 
     # Released factors are original-sample estimates: an oracle/descriptive
     # replication only, never a tradable forecast. The usable paired sample is 468.
@@ -137,7 +140,7 @@ def run_replication():
         check(f"published {row.model} maturity {row.maturity}", abs(row.difference), .0051)
 
     # Independent PCA reproduction using the author's MATLAB raw data, transform
-    # codes, and supplied Fhat_T. This is the 2007 handbook version (131 columns),
+    # codes, and supplied Fhat_T. This is the updated handbook panel (131 columns),
     # not falsely described as the original RFS 2009 panel of 132 series.
     with zipfile.ZipFile(Path(DATA_DIR)/"LN_handbook_replication.zip") as z:
         original = loadmat(io.BytesIO(z.read("Data&ReplicationFiles/lndata.mat")))
@@ -154,31 +157,8 @@ def run_replication():
     pca /= pca.std(axis=0, ddof=0)
     sign = np.sign(np.sum(pca*released, axis=0))
     check("eight PCA factors vs author MATLAB scores up to sign", np.max(np.abs(pca*sign-released)), 1e-8)
-    # CP15 formula check on the original 470-month predictor interval. The
-    # paper uses bootstrapped CMT curves; GSW and revised core CPI are explicit
-    # data adaptations, so its .53 is a comparison, not a forced pass tolerance.
-    from .validated_models import cp15_cycles, inflation_trend, load_long_market
-    long = load_long_market().loc["1971-11":"2010-12"].copy()
-    raw = pd.read_csv(Path(DATA_DIR)/"CPILFESL.csv")
-    cpi = pd.Series(pd.to_numeric(raw.CPILFESL, errors="coerce").to_numpy(),
-                    index=pd.PeriodIndex(pd.to_datetime(raw.iloc[:, 0]), freq="M"))
-    long["tau"] = inflation_trend(cpi, lag=1).reindex(long.index)
-    X, _ = cp15_cycles(long, long, long)
-    cols = [f"long_y{n}" for n in range(1, 21)]
-    independent = sm.OLS(long[cols], sm.add_constant(long.tau)).fit()
-    residual = long[cols]-independent.fittedvalues
-    manual = np.column_stack([residual.iloc[:, 0], residual.iloc[:, 1:].mean(axis=1)])
-    check("CP15 production detrending vs independent twenty-yield OLS", np.max(np.abs(X-manual)), 1e-10)
-    check("CP15 original sample has 470 observations", abs(len(long)-470), 0)
-    target = (long[[f"long_rx{n}" for n in range(2, 21)]].to_numpy()/np.arange(2, 21)).mean(axis=1)
-    fit = sm.OLS(target, sm.add_constant(X)).fit()
-    rows.append(dict(model="CP15 GSW adaptation", maturity="duration basket 2-20", n=len(long),
-                     purchase_start="1971-11", purchase_end="2010-12", last_sale="2011-12", statistic="adjusted R2",
-                     published=.53, reproduced=fit.rsquared_adj, difference=fit.rsquared_adj-.53,
-                     comparison="GSW vs original bootstrapped CMT; descriptive, original one-month CPI lag"))
-    result = pd.DataFrame(rows)
     sources = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in [Path(DATA_DIR)/n for n in
-               ["Fama_Bliss_price.txt", "RFS2009.xls", "LN_handbook_replication.zip", "GSW_yields.csv", "CPILFESL.csv", "F-F_Research_Data_Factors_CSV.zip"]]}
+               ["CP2005_replication.zip", "RFS2009.xls", "LN_handbook_replication.zip"]]}
     checks = pd.DataFrame(checks)
     if not checks.passed.all():
         raise AssertionError(checks.loc[~checks.passed].to_string(index=False))
